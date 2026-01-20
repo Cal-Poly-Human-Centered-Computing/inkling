@@ -19,5 +19,18 @@
 		"svelte-check": "^4.3.4",
 		"typescript": "^5.9.3",
 		"vite": "^7.2.6"
+	},
+	"dependencies": {
+		"@codemirror/commands": "^6.10.1",
+		"@codemirror/lang-json": "^6.0.2",
+		"@codemirror/language": "^6.12.1",
+		"@codemirror/state": "^6.5.4",
+		"@codemirror/view": "^6.39.11",
+		"@fortawesome/free-solid-svg-icons": "^7.1.0",
+		"bulma": "^1.0.4",
+		"danfojs": "^1.2.0",
+		"svelte-fa": "^4.0.4",
+		"vega": "^6.2.0",
+		"vega-embed": "^7.1.0"
 	}
 }
