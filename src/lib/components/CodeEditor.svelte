@@ -2,7 +2,7 @@
 	import { onMount, createEventDispatcher } from 'svelte';
 	import { writable } from 'svelte/store';
 	import Fa from 'svelte-fa';
-	import { faUpload } from '@fortawesome/free-solid-svg-icons';
+	import { faUpload, faDatabase } from '@fortawesome/free-solid-svg-icons';
 
 	export let code: string = '{\n  "$schema": "https://vega.github.io/schema/vega-lite/v5.json"\n}';
 	const dispatch = createEventDispatcher();
@@ -12,10 +12,17 @@
 
 	const codeStore = writable(code);
 
-	// modal state
+	// upload modal state
 	let showUploadModal = false;
 	let selectedFile: File | null = null;
 	let fileInputEl: HTMLInputElement | null = null;
+
+	// dataset modal state
+	let showDatasetModal = false;
+	let datasetMode: 'file' | 'url' = 'file';
+	let datasetFile: File | null = null;
+	let datasetFileInput: HTMLInputElement | null = null;
+	let datasetUrl: string = '';
 
 	onMount(async () => {
 		if (!editorContainer) return;
@@ -53,7 +60,6 @@
 	function openUploadModal() {
 		selectedFile = null;
 		showUploadModal = true;
-		// focus the input after the modal is visible
 		setTimeout(() => fileInputEl?.focus(), 0);
 	}
 
@@ -78,6 +84,37 @@
 		showUploadModal = false;
 	}
 
+	// dataset modal handlers
+	function openDatasetModal() {
+		datasetMode = 'file';
+		datasetFile = null;
+		datasetUrl = '';
+		showDatasetModal = true;
+		setTimeout(() => datasetFileInput?.focus(), 0);
+	}
+
+	function onDatasetFileChange(e: Event) {
+		const input = e.target as HTMLInputElement;
+		if (input.files && input.files[0]) datasetFile = input.files[0];
+		else datasetFile = null;
+	}
+
+	function confirmDataset() {
+		if (datasetMode === 'file' && datasetFile) {
+			dispatch('attachDataset', { kind: 'file', file: datasetFile });
+			showDatasetModal = false;
+		} else if (datasetMode === 'url' && datasetUrl.trim()) {
+			dispatch('attachDataset', { kind: 'url', url: datasetUrl.trim() });
+			showDatasetModal = false;
+		}
+	}
+
+	function cancelDataset() {
+		datasetFile = null;
+		datasetUrl = '';
+		showDatasetModal = false;
+	}
+
 	let fallbackValue = code;
 	function onFallbackInput(e: Event) {
 		const t = e.target as HTMLTextAreaElement;
@@ -91,6 +128,10 @@
 		<button class="button is-light" aria-label="Upload sketch image" on:click={openUploadModal}>
 			<span class="icon is-small"><Fa icon={faUpload} /></span>
 		</button>
+		<!-- dataset attach button to the right -->
+		<button class="button is-light" aria-label="Attach dataset" on:click={openDatasetModal}>
+			<span class="icon is-small"><Fa icon={faDatabase} /></span>
+		</button>
 	</div>
 
 	<div bind:this={editorContainer} class="content" style="flex:1 1 auto; min-height:0; border:1px solid #eaeaea;">
@@ -103,7 +144,7 @@
 <!-- Upload modal -->
 {#if showUploadModal}
 	<div class="modal is-active" role="dialog" aria-modal="true" aria-label="Upload sketch dialog">
-		<div class="modal-background" on:click={cancelUpload}></div>
+		<div class="modal-background" role="button" tabindex="0" aria-label="Close upload dialog" on:click={cancelUpload} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelUpload(); }}></div>
 		<div class="modal-card">
 			<header class="modal-card-head">
 				<p class="modal-card-title">Upload sketch image</p>
@@ -111,9 +152,9 @@
 			</header>
 			<section class="modal-card-body">
 				<div class="field">
-					<label class="label">Choose image</label>
+					<label class="label" for="upload-file-input">Choose image</label>
 					<div class="control">
-						<input bind:this={fileInputEl} class="input" type="file" accept="image/*" on:change={onFileChange} />
+						<input id="upload-file-input" bind:this={fileInputEl} class="input" type="file" accept="image/*" on:change={onFileChange} />
 					</div>
 					{#if selectedFile}
 						<p class="help">Selected: {selectedFile.name}</p>
@@ -123,6 +164,56 @@
 			<footer class="modal-card-foot">
 				<button class="button is-info" on:click={confirmUpload} disabled={!selectedFile}>Upload</button>
 				<button class="button" on:click={cancelUpload}>Cancel</button>
+			</footer>
+		</div>
+	</div>
+{/if}
+
+<!-- Dataset modal -->
+{#if showDatasetModal}
+	<div class="modal is-active" role="dialog" aria-modal="true" aria-label="Attach dataset dialog">
+		<div class="modal-background" role="button" tabindex="0" aria-label="Close dataset dialog" on:click={cancelDataset} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelDataset(); }}></div>
+		<div class="modal-card">
+			<header class="modal-card-head">
+				<p class="modal-card-title">Attach dataset</p>
+				<button class="delete" aria-label="close" on:click={cancelDataset}></button>
+			</header>
+			<section class="modal-card-body">
+				<div class="field">
+					<label class="label" for="dataset-mode-select">Source</label>
+					<div class="control">
+						<div class="select">
+							<select id="dataset-mode-select" bind:value={datasetMode} aria-label="Choose dataset source">
+								<option value="file">Upload CSV file</option>
+								<option value="url">Use URL</option>
+							</select>
+						</div>
+					</div>
+				</div>
+
+				{#if datasetMode === 'file'}
+					<div class="field">
+						<label class="label" for="dataset-file-input">CSV file</label>
+						<div class="control">
+							<input id="dataset-file-input" bind:this={datasetFileInput} class="input" type="file" accept=".csv,text/csv" on:change={onDatasetFileChange} />
+						</div>
+						{#if datasetFile}
+							<p class="help">Selected: {datasetFile.name}</p>
+						{/if}
+					</div>
+				{:else}
+					<div class="field">
+						<label class="label" for="dataset-url-input">Dataset URL</label>
+						<div class="control">
+							<input id="dataset-url-input" class="input" type="url" placeholder="https://example.com/data.csv or .json" bind:value={datasetUrl} />
+						</div>
+						<p class="help">You can use public URLs like https://vega.github.io/vega-datasets/data/cars.json</p>
+					</div>
+				{/if}
+			</section>
+			<footer class="modal-card-foot">
+				<button class="button is-info" on:click={confirmDataset} disabled={(datasetMode === 'file' && !datasetFile) || (datasetMode === 'url' && !datasetUrl)}>Attach</button>
+				<button class="button" on:click={cancelDataset}>Cancel</button>
 			</footer>
 		</div>
 	</div>
