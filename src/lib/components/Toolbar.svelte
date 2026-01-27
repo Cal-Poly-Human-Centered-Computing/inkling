@@ -42,20 +42,20 @@
 					<Fa icon={faRedo} />
 				</span>
 			</button>
-			<button class="button toolbar-button" on:click={() => select('pen')} aria-label="Pen tool" aria-pressed={active === 'pen'} class:has-text-weight-bold={active === 'pen'}>
+			<button class="button toolbar-button" on:click={() => select('pen')} aria-label="Pen tool" aria-pressed={active === 'pen'} class:has-text-weight-bold={active === 'pen'} class:tool-active={active === 'pen'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faPen} />
 				</span>
 				<span>Pen</span>
 			</button>
-			<button class="button toolbar-button" on:click={() => select('textbox')} aria-label="Textbox tool" aria-pressed={active === 'textbox'} class:has-text-weight-bold={active === 'textbox'}>
+			<button class="button toolbar-button" on:click={() => select('textbox')} aria-label="Textbox tool" aria-pressed={active === 'textbox'} class:has-text-weight-bold={active === 'textbox'} class:tool-active={active === 'textbox'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faFont} />
 				</span>
 				<span>Textbox</span>
 			</button>
 			<!-- Eraser button immediately to the right of Textbox -->
-			<button class="button toolbar-button" on:click={() => select('eraser')} aria-label="Eraser tool" aria-pressed={active === 'eraser'} class:has-text-weight-bold={active === 'eraser'}>
+			<button class="button toolbar-button" on:click={() => select('eraser')} aria-label="Eraser tool" aria-pressed={active === 'eraser'} class:has-text-weight-bold={active === 'eraser'} class:tool-active={active === 'eraser'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faEraser} />
 				</span>
@@ -106,5 +106,23 @@
 		justify-content: center;
 		width: 18px;
 		height: 18px;
+	}
+
+	/* Active tool styling: invert colors to white background with black text/icon */
+	:global(.toolbar-button.tool-active) {
+		background: white !important;
+		color: #111 !important;
+		border: 1px solid rgba(0,0,0,0.08) !important;
+		box-shadow: 0 1px 2px rgba(0,0,0,0.04) inset;
+	}
+
+	/* Ensure the icon inherits button color when active (avoid svg selector to prevent Svelte warnings) */
+	:global(.toolbar-button.tool-active) .toolbar-icon {
+		color: #111;
+	}
+
+	/* Slight transition for visual feedback */
+	:global(.toolbar-button) {
+		transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 	}
 </style>
