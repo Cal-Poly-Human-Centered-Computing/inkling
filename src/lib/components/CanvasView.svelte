@@ -6,8 +6,10 @@
 	export let selectedTool: 'pen' | 'textbox' | 'eraser' = 'pen';
 
 	let containerEl: HTMLDivElement | null = null;
+	let contentEl: HTMLDivElement | null = null;
 	let canvasEl: HTMLCanvasElement | null = null;
 	let ctx: CanvasRenderingContext2D | null = null;
+	let view: any = null;
 
 	const strokes = writable<Array<Array<{x:number,y:number}>>>([]);
 	// texts now have an id so overlays can be tracked
@@ -338,7 +340,7 @@
 					} catch (err) { /* ignore */ }
 					// store the content origin (inside-border + padding) so canvas drawing aligns exactly
 					finalX = tr.left - cr.left + borderLeft + padLeft;
-					finalY = tr.top - cr.top + borderTop + padTop + 2; // small 2px nudge down to correct placement
+					finalY = tr.top - cr.top + borderTop + padTop;
 					finalW = textareaWrapperRef.offsetWidth;
 					finalH = textareaWrapperRef.offsetHeight;
 				}
@@ -454,12 +456,6 @@
 		ignoreNextBlur = true;
 		isResizing = true;
 		resizeSide = side;
-		resizeStartX = e.clientX;
-		resizeStartY = e.clientY;
-		resizeStartLeft = editingX;
-		resizeStartTop = editingY;
-		resizeStartW = editingWidth;
-		resizeStartH = editingHeight;
 
 		// capture an explicit start rect (or synthesize one if ref missing)
 		try {
@@ -473,11 +469,6 @@
 				resizeStartRect = new DOMRect(left, top, editingWidth, editingHeight);
 			} else {
 				resizeStartRect = null;
-			}
-			if (resizeStartRect) {
-				resizeStartBottom = resizeStartRect.bottom;
-				resizeStartTopPx = resizeStartRect.top;
-				resizeStartHeightPx = resizeStartRect.height;
 			}
 		} catch {
 			resizeStartRect = null;
@@ -599,7 +590,6 @@
 		isResizing = false;
 		resizeSide = null;
 		ignoreNextBlur = false;
-		_topAtMin = false;
 		try { textareaRef?.focus(); } catch {}
 	}
 
