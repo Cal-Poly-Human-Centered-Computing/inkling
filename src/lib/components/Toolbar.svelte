@@ -108,17 +108,27 @@
 		height: 18px;
 	}
 
-	/* Active tool styling: invert colors to white background with black text/icon */
-	:global(.toolbar-button.tool-active) {
-		background: white !important;
-		color: #111 !important;
-		border: 1px solid rgba(0,0,0,0.08) !important;
-		box-shadow: 0 1px 2px rgba(0,0,0,0.04) inset;
+	/* Theme-aware active tool styling */
+	/* Light theme: use dark background for active so it remains visible */
+	@media (prefers-color-scheme: light) {
+		:global(.toolbar-button.tool-active) {
+			background: #111 !important;
+			color: #fff !important;
+			border: 1px solid rgba(0,0,0,0.12) !important;
+			box-shadow: 0 1px 2px rgba(0,0,0,0.06) inset;
+		}
+		:global(.toolbar-button.tool-active) .toolbar-icon { color: #fff; }
 	}
 
-	/* Ensure the icon inherits button color when active (avoid svg selector to prevent Svelte warnings) */
-	:global(.toolbar-button.tool-active) .toolbar-icon {
-		color: #111;
+	/* Dark theme: keep white inverted button as before */
+	@media (prefers-color-scheme: dark) {
+		:global(.toolbar-button.tool-active) {
+			background: white !important;
+			color: #111 !important;
+			border: 1px solid rgba(0,0,0,0.08) !important;
+			box-shadow: 0 1px 2px rgba(0,0,0,0.04) inset;
+		}
+		:global(.toolbar-button.tool-active) .toolbar-icon { color: #111; }
 	}
 
 	/* Slight transition for visual feedback */

@@ -11,6 +11,73 @@
 	let ctx: CanvasRenderingContext2D | null = null;
 	let view: any = null;
 
+	// debounced rendering of the Vega-Lite spec
+	let renderTimeout: ReturnType<typeof setTimeout> | null = null;
+	const RENDER_DEBOUNCE_MS = 800; // 800 ms
+
+// cache serialized specs so we only schedule/render when the spec actually changes
+let lastScheduledSpecStr: string | null = null;
+let lastRenderedSpecStr: string | null = null;
+
+	async function doRenderSpec(specToRender: any) {
+	    if (typeof window === 'undefined' || !containerEl) return;
+	    try {
+	        // clear previous embed and finalize previous view if present
+	        try {
+	            if (view && view.view && typeof view.view.finalize === 'function') {
+	                view.view.finalize();
+	            }
+	        } catch (err) { /* ignore */ }
+	        // clear existing contents so embed injects fresh DOM
+	        containerEl.innerHTML = '';
+	        const embed = (await import('vega-embed')).default;
+	        let parsed = specToRender;
+	        try { parsed = typeof specToRender === 'string' ? JSON.parse(specToRender) : specToRender; } catch (err) { parsed = specToRender; }
+	        view = await embed(containerEl, parsed, { actions: false, renderer: 'canvas' });
+	    } catch (err) {
+	        console.warn('vega-embed render failed:', err);
+	    }
+	}
+
+	function scheduleRender(specToSchedule: any) {
+	    // serialize spec for cheap equality checks
+	    let s: string;
+	    try { s = typeof specToSchedule === 'string' ? specToSchedule : JSON.stringify(specToSchedule); } catch (err) { s = String(specToSchedule); }
+	    // if we've already scheduled the same spec, don't re-schedule
+	    if (lastScheduledSpecStr === s) return;
+	    lastScheduledSpecStr = s;
+
+	    if (renderTimeout) clearTimeout(renderTimeout);
+	    renderTimeout = setTimeout(() => {
+	        renderTimeout = null;
+	        // clear lastScheduled now that we're running
+	        lastScheduledSpecStr = null;
+	        doRenderSpec(specToSchedule).then(() => {
+	            // mark this spec as rendered
+	            lastRenderedSpecStr = s;
+	        }).catch(() => {
+	            // on error we still clear the scheduled marker so user can retry edits
+	            lastRenderedSpecStr = null;
+	        });
+	    }, RENDER_DEBOUNCE_MS);
+	}
+
+	// reactively schedule a render only when `spec` changes; do NOT read renderTimeout here
+	$: if (typeof window !== 'undefined' && spec !== undefined) {
+	    // if the spec is identical to what is already rendered, skip scheduling
+	    try {
+	        const s = typeof spec === 'string' ? spec : JSON.stringify(spec);
+	        if (lastRenderedSpecStr === s) {
+	            // already rendered; nothing to do
+	        } else {
+	            scheduleRender(spec);
+	        }
+	    } catch (err) {
+	        // fallback: schedule render if serialization fails
+	        scheduleRender(spec);
+	    }
+	}
+
 	const strokes = writable<Array<Array<{x:number,y:number}>>>([]);
 	// texts now have an id so overlays can be tracked
 	const texts = writable<Array<{id:string,x:number,y:number,text:string,width?:number,height?:number}>>([]);
@@ -122,6 +189,15 @@
 			window.removeEventListener('resize', resizeCanvas);
 			window.removeEventListener('pointerdown', onGlobalPointerDown, true);
 		}
+		// clear any pending render timeout
+		if (renderTimeout) {
+			clearTimeout(renderTimeout);
+			renderTimeout = null;
+		}
+		// finalize vega view if present
+		try {
+			if (view && view.view && typeof view.view.finalize === 'function') view.view.finalize();
+		} catch (err) { /* ignore */ }
 	});
 
 	function resizeCanvas() {
@@ -671,23 +747,32 @@
 						<textarea
 							bind:this={textareaRef}
 							class="text-overlay"
-							style="position:relative; z-index:1; min-width:40px; min-height:20px; border:1px dashed rgba(0,0,0,0.35); background:transparent; padding:4px; font:14px sans-serif; color:#000; resize:none;"
+							style="position:relative; z-index:1; min-width:40px; min-height:20px; border:1px dashed rgba(0,0,0,0.35); background:transparent; padding:4px; font:14px sans-serif; color:#000; resize:none; caret-color: rgba(0,0,0,0.85);"
 							bind:value={editingText}
-							on:input={() => { adjustTextareaSize(); }}
-							on:blur={() => {
-							// delay commit briefly to let a resize start handler run (it sets isResizing)
-							setTimeout(() => {
-								if (ignoreNextBlur) { ignoreNextBlur = false; return; }
-								if (!isResizing) finishEditing();
-							}, 0);
+						on:input={() => { adjustTextareaSize(); }}
+						on:blur={() => {
+						// delay commit briefly to let a resize start handler run (it sets isResizing)
+						setTimeout(() => {
+							if (ignoreNextBlur) { ignoreNextBlur = false; return; }
+							if (!isResizing) finishEditing();
+						}, 0);
+					}}
+						on:keydown={(e) => {
+							if (e.key === 'Escape') { /* cancel edit - discard current editing text */ cancelEditing(); }
+							// allow Enter to insert newline; Ctrl/Cmd+Enter commits
+							if ((e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+								textareaRef && textareaRef.blur();
+							}
 						}}
-							on:keydown={(e) => {
-								if (e.key === 'Escape') { /* cancel edit - discard current editing text */ cancelEditing(); }
-								// allow Enter to insert newline; Ctrl/Cmd+Enter commits
-								if ((e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
-									textareaRef && textareaRef.blur();
-								}
-							}}
+						on:pointerdown={(e) => {
+							e.stopPropagation();
+							// ensure textarea gets focus and caret placed where clicked
+							try {
+								textareaRef?.focus();
+								const pos = (textareaRef && typeof textareaRef.selectionStart === 'number') ? textareaRef.selectionStart : textareaRef?.value.length ?? 0;
+								textareaRef?.setSelectionRange(pos, pos);
+							} catch (err) {}
+						}}
 						></textarea>
 						<!-- resize handles: small circles at midpoints of each side -->
 						{#if editingId}

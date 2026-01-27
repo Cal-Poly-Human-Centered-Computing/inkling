@@ -1,14 +1,17 @@
 <script lang="ts">
-	import { onMount, createEventDispatcher } from 'svelte';
+	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
 	import { writable } from 'svelte/store';
 	import Fa from 'svelte-fa';
 	import { faUpload, faDatabase } from '@fortawesome/free-solid-svg-icons';
 
-	export let code: string = '{\n  "$schema": "https://vega.github.io/schema/vega-lite/v5.json"\n}';
+	export let code: string = '';
+
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
 	let textareaFallback: HTMLTextAreaElement | null = null;
 	let editorMounted = false;
+	let editorView: any = null;
+	let containerPointerHandler: ((e: PointerEvent) => void) | null = null;
 
 	const codeStore = writable(code);
 
@@ -39,6 +42,13 @@
 			doc: code,
 			extensions: [
 				json(),
+				// Theme to make editor fill container and allow scrolling
+				EditorView.theme({
+					'&': { height: '100%', display: 'flex', flexDirection: 'column' },
+					'.cm-scroller': { flex: '1 1 auto', minHeight: '0', overflow: 'auto', overflowX: 'auto', overflowY: 'auto' },
+					'.cm-content': { whiteSpace: 'pre' },
+					'.cm-gutters': { flex: '0 0 auto' }
+				}),
 				EditorView.updateListener.of((v: any) => {
 					if (v.docChanged) {
 						const val = v.state.doc.toString();
@@ -49,12 +59,27 @@
 			]
 		});
 
-		new EditorView({
+		editorView = new EditorView({
 			state,
 			parent: editorContainer
 		});
 
+		// ensure clicking/tapping the editor container focuses the editor so the caret appears
+		if (editorContainer && editorView) {
+			containerPointerHandler = () => { try { editorView.focus(); } catch (_) {} };
+			editorContainer.addEventListener('pointerdown', containerPointerHandler);
+		}
+
 		editorMounted = true;
+	});
+
+	onDestroy(() => {
+	    try {
+	        if (editorView && typeof editorView.destroy === 'function') editorView.destroy();
+	    } catch (err) {}
+	    try {
+	        if (editorContainer && containerPointerHandler) editorContainer.removeEventListener('pointerdown', containerPointerHandler);
+	    } catch (err) {}
 	});
 
 	function openUploadModal() {
@@ -136,7 +161,7 @@
 
 	<div bind:this={editorContainer} class="content" style="flex:1 1 auto; min-height:0; border:1px solid #eaeaea;">
 		{#if !editorMounted}
-			<textarea bind:this={textareaFallback} class="textarea" bind:value={fallbackValue} on:input={onFallbackInput} aria-label="Vega-Lite editor fallback" style="height:100%; width:100%;"></textarea>
+			<textarea bind:this={textareaFallback} class="textarea code-fallback" bind:value={fallbackValue} on:input={onFallbackInput} aria-label="Vega-Lite editor fallback" style="height:100%; width:100%; overflow:auto; white-space:pre; resize:none;"></textarea>
 		{/if}
 	</div>
 </div>
@@ -218,3 +243,49 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+  /* Default (light) theme styles */
+  @media (prefers-color-scheme: light) {
+	  :global(.code-fallback) { caret-color: black !important; }
+
+	  /* scrollbars - dark thumbs on light track */
+    :global(.cm-scroller::-webkit-scrollbar), :global(.code-fallback::-webkit-scrollbar) {
+      height: 10px; width: 10px;
+    }
+    :global(.cm-scroller::-webkit-scrollbar-track), :global(.code-fallback::-webkit-scrollbar-track) {
+      background: rgba(0,0,0,0.04);
+      border-radius: 6px;
+    }
+    :global(.cm-scroller::-webkit-scrollbar-thumb), :global(.code-fallback::-webkit-scrollbar-thumb) {
+      background: rgba(0,0,0,0.28);
+      border-radius: 6px;
+    }
+    :global(.cm-scroller), :global(.code-fallback) {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(0,0,0,0.28) rgba(0,0,0,0.04);
+    }
+  }
+
+  /* Dark theme styles */
+  @media (prefers-color-scheme: dark) {
+	  :global(.cm-content), :global(.code-fallback) { caret-color: white !important; }
+
+    /* scrollbars - light thumbs on subtle dark track */
+    :global(.cm-scroller::-webkit-scrollbar), :global(.code-fallback::-webkit-scrollbar) {
+      height: 10px; width: 10px;
+    }
+    :global(.cm-scroller::-webkit-scrollbar-track), :global(.code-fallback::-webkit-scrollbar-track) {
+      background: rgba(255,255,255,0.03);
+      border-radius: 6px;
+    }
+    :global(.cm-scroller::-webkit-scrollbar-thumb), :global(.code-fallback::-webkit-scrollbar-thumb) {
+      background: rgba(255,255,255,0.54);
+      border-radius: 6px;
+    }
+    :global(.cm-scroller), :global(.code-fallback) {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.54) rgba(255,255,255,0.03);
+    }
+  }
+</style>
