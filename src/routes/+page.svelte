@@ -41,7 +41,7 @@
 </script>
 
 <div class="container is-fluid" style="height:100vh; padding:1rem;">
-	<div class="columns is-gapless" style="height:100%;">
+	<div class="columns" style="height:100%;">
 		<div class="column is-half" style="display:flex; flex-direction:column; padding-right:0.5rem;">
 			<!-- Code editor area -->
 			<div style="flex:1 1 auto; min-height:0;">

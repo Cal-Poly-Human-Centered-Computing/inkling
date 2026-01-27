@@ -192,9 +192,9 @@
 </script>
 
 <div class="box" style="height:100%; position:relative; display:flex; flex-direction:column;">
-	<div style="flex:0 0 auto;">
-		<p class="is-size-7 has-text-grey">Tool: <strong>{selectedTool}</strong></p>
-	</div>
+<!--	<div style="flex:0 0 auto;">-->
+<!--		<p class="is-size-7 has-text-grey">Tool: <strong>{selectedTool}</strong></p>-->
+<!--	</div>-->
 
 	<div class="content" style="flex:1 1 auto; min-height:0; position:relative;">
 		<div bind:this={containerEl} style="height:100%; width:100%; background:#fff; display:flex; align-items:center; justify-content:center;">

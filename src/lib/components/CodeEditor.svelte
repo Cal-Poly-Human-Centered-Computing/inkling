@@ -162,7 +162,7 @@
 				</div>
 			</section>
 			<footer class="modal-card-foot">
-				<button class="button is-info" on:click={confirmUpload} disabled={!selectedFile}>Upload</button>
+				<button class="button is-info" on:click={confirmUpload} disabled={!selectedFile}>Upload</button>&nbsp;
 				<button class="button" on:click={cancelUpload}>Cancel</button>
 			</footer>
 		</div>
@@ -212,7 +212,7 @@
 				{/if}
 			</section>
 			<footer class="modal-card-foot">
-				<button class="button is-info" on:click={confirmDataset} disabled={(datasetMode === 'file' && !datasetFile) || (datasetMode === 'url' && !datasetUrl)}>Attach</button>
+				<button class="button is-info" on:click={confirmDataset} disabled={(datasetMode === 'file' && !datasetFile) || (datasetMode === 'url' && !datasetUrl)}>Attach</button>&nbsp;
 				<button class="button" on:click={cancelDataset}>Cancel</button>
 			</footer>
 		</div>
