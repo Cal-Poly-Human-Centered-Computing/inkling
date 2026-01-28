@@ -1,5 +1,6 @@
 <script lang="ts">
     import { CodeEditor, ChatBox, Toolbar, CanvasView } from '$lib/components';
+    import { loadDatasetFromUrl as loadDatasetFromUrlHelper } from '$lib/utils/datasetLoader';
 
     let code = `{
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
@@ -41,6 +42,32 @@
     function handleRedo() {
         if (canvasViewRef && typeof canvasViewRef.redo === 'function') canvasViewRef.redo();
     }
+
+    // handle dataset attachments coming from the CodeEditor dataset modal
+    async function handleAttachDataset(e: CustomEvent) {
+        const detail = e.detail || {};
+        if (detail.kind === 'url' && detail.url) {
+            console.log('Loading dataset via helper:', detail.url);
+            try {
+                const res = await loadDatasetFromUrlHelper(detail.url);
+                console.log('Dataset loaded via helper:', res);
+                // Optionally: forward to canvas or store; kept as a log for now
+            } catch (err) {
+                console.error('Failed to load dataset via helper:', err);
+            }
+        } else if (detail.kind === 'file') {
+            // file handling will be implemented later
+            console.log('Dataset file attached (not yet handled):', detail.file);
+        }
+    }
+
+    function handleDatasetLoaded(e: CustomEvent) {
+        console.log('Dataset loaded in CanvasView:', e.detail);
+    }
+
+    function handleDatasetError(e: CustomEvent) {
+        console.error('Dataset error in CanvasView:', e.detail);
+    }
 </script>
 
 <div class="container is-fluid" style="height:100vh; padding:1rem;">
@@ -48,7 +75,7 @@
         <div class="column is-half" style="display:flex; flex-direction:column; padding-right:0.5rem;">
             <!-- Code editor area -->
             <div style="flex:1 1 auto; min-height:0;">
-                <CodeEditor {code} on:upload={handleUpload} on:codeChange={handleCodeChange} />
+                <CodeEditor {code} on:upload={handleUpload} on:codeChange={handleCodeChange} on:attachDataset={handleAttachDataset} />
             </div>
 
             <!-- Chatbox pinned to bottom -->
