@@ -2,7 +2,7 @@
 	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
 	import { writable } from 'svelte/store';
 	import Fa from 'svelte-fa';
-	import { faUpload, faDatabase } from '@fortawesome/free-solid-svg-icons';
+	import { faUpload, faDatabase, faQuestionCircle } from '@fortawesome/free-solid-svg-icons';
 
 	export let code: string = '';
 
@@ -26,6 +26,11 @@
 	let datasetFile: File | null = null;
 	let datasetFileInput: HTMLInputElement | null = null;
 	let datasetUrl: string = '';
+
+	// dataset help popover state
+	let showDatasetHelp = false;
+	let helpButtonEl: HTMLButtonElement | null = null;
+	let helpPopoverEl: HTMLDivElement | null = null;
 
 	onMount(async () => {
 		if (!editorContainer) return;
@@ -80,6 +85,10 @@
 	    try {
 	        if (editorContainer && containerPointerHandler) editorContainer.removeEventListener('pointerdown', containerPointerHandler);
 	    } catch (err) {}
+	    try {
+			// ensure any document listener used by the dataset help popover is removed
+			document.removeEventListener('mousedown', handleDocClick);
+		} catch (err) {}
 	});
 
 	function openUploadModal() {
@@ -125,6 +134,9 @@
 	}
 
 	function confirmDataset() {
+		// close any help popover when confirming
+		showDatasetHelp = false;
+		document.removeEventListener('mousedown', handleDocClick);
 		if (datasetMode === 'file' && datasetFile) {
 			dispatch('attachDataset', { kind: 'file', file: datasetFile });
 			showDatasetModal = false;
@@ -137,6 +149,9 @@
 	function cancelDataset() {
 		datasetFile = null;
 		datasetUrl = '';
+		// ensure help popover closed when cancelling
+		showDatasetHelp = false;
+		document.removeEventListener('mousedown', handleDocClick);
 		showDatasetModal = false;
 	}
 
@@ -145,6 +160,27 @@
 		const t = e.target as HTMLTextAreaElement;
 		fallbackValue = t.value;
 		dispatch('codeChange', t.value);
+	}
+
+	// helpers for the dataset help popover
+	function toggleDatasetHelp() {
+		showDatasetHelp = !showDatasetHelp;
+		if (showDatasetHelp) document.addEventListener('mousedown', handleDocClick);
+		else document.removeEventListener('mousedown', handleDocClick);
+	}
+
+	function handleDocClick(e: MouseEvent) {
+		const target = e.target as Node;
+		if (!helpPopoverEl?.contains(target) && !helpButtonEl?.contains(target)) {
+			showDatasetHelp = false;
+			document.removeEventListener('mousedown', handleDocClick);
+		}
+	}
+
+	// hide the help popover whenever the user switches away from file mode
+	$: if (datasetMode !== 'file') {
+		showDatasetHelp = false;
+		document.removeEventListener('mousedown', handleDocClick);
 	}
 </script>
 
@@ -206,13 +242,23 @@
 			<section class="modal-card-body">
 				<div class="field">
 					<label class="label" for="dataset-mode-select">Source</label>
-					<div class="control">
+					<div class="control dataset-source-control" style="display:flex; align-items:center; gap:0.5rem; position:relative;">
 						<div class="select">
 							<select id="dataset-mode-select" bind:value={datasetMode} aria-label="Choose dataset source">
 								<option value="file">Upload CSV file</option>
 								<option value="url">Use URL</option>
 							</select>
 						</div>
+						{#if datasetMode === 'file'}
+							<button class="button is-white help-icon-button" aria-label="Dataset help" bind:this={helpButtonEl} on:click={toggleDatasetHelp} aria-expanded={showDatasetHelp}>
+								<span class="icon is-small"><Fa icon={faQuestionCircle} /></span>
+							</button>
+							{#if showDatasetHelp}
+								<div bind:this={helpPopoverEl} class="dataset-help-popover" role="dialog" aria-live="polite">
+									<p style="margin:0; font-size:0.9rem;">Any CSV files you upload are processed locally in your browser and are not sent to the AI server.</p>
+								</div>
+							{/if}
+						{/if}
 					</div>
 				</div>
 
@@ -265,6 +311,31 @@
       scrollbar-width: thin;
       scrollbar-color: rgba(0,0,0,0.28) rgba(0,0,0,0.04);
     }
+
+	/* dataset help styles (light) */
+	.dataset-source-control .help-icon-button {
+		border-radius: 50%;
+		width: 1.6rem;
+		height: 1.6rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: 1px solid rgba(0,0,0,0.08);
+	}
+	.dataset-help-popover {
+		position: absolute;
+		top: 2.4rem;
+		left: 0;
+		z-index: 40;
+		background: white;
+		border: 1px solid #e6e6e6;
+		padding: 0.5rem;
+		border-radius: 6px;
+		width: 260px;
+		box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+		font-size: 0.9rem;
+	}
   }
 
   /* Dark theme styles */
@@ -287,5 +358,31 @@
       scrollbar-width: thin;
       scrollbar-color: rgba(255,255,255,0.54) rgba(255,255,255,0.03);
     }
+
+	/* dataset help styles (dark) */
+	.dataset-source-control .help-icon-button {
+		border-radius: 50%;
+		width: 1.6rem;
+		height: 1.6rem;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		border: 1px solid rgba(255,255,255,0.06);
+	}
+	.dataset-help-popover {
+		position: absolute;
+		top: 2.4rem;
+		left: 0;
+		z-index: 40;
+		background: #0f0f0f;
+		border: 1px solid rgba(255,255,255,0.06);
+		padding: 0.5rem;
+		border-radius: 6px;
+		width: 260px;
+		box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+		font-size: 0.9rem;
+		color: #eaeaea;
+	}
   }
 </style>
