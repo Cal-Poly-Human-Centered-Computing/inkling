@@ -1,14 +1,15 @@
 <script lang="ts">
 	import Fa from 'svelte-fa';
-	import { faUndo, faRedo, faPen, faFont, faEraser, faSync } from '@fortawesome/free-solid-svg-icons';
+	import {faUndo, faRedo, faPen, faFont, faEraser, faSync} from '@fortawesome/free-solid-svg-icons';
 	import { createEventDispatcher } from 'svelte';
+	import {faMousePointer} from "@fortawesome/free-solid-svg-icons/faMousePointer";
 	const dispatch = createEventDispatcher();
 	export let selected: 'pen' | 'textbox' | 'eraser' = 'pen';
-	let active: 'pen' | 'textbox' | 'eraser' = selected;
+	let active: 'pen' | 'textbox' | 'eraser'| 'selector' = selected;
 
 	$: if (selected && selected !== active) active = selected;
 
-	function select(t: 'pen' | 'textbox' | 'eraser') {
+	function select(t: 'pen' | 'textbox' | 'eraser' | 'selector') {
 		active = t;
 		dispatch('selectTool', t);
 	}
@@ -28,9 +29,8 @@
 
 <!-- Container uses flex with center alignment so all buttons line up vertically -->
 <div class="toolbar" style="display:flex; align-items:center; justify-content:space-between; padding:0.5rem;">
+	<!-- Undo/Redo buttons on the left -->
 	<div style="display:flex; align-items:center; gap:0.5rem;">
-
-		<!-- Main tool buttons -->
 		<div class="buttons" role="toolbar" aria-label="Drawing tools" style="display:flex; align-items:center; gap:0.5rem;">
 			<button class="button toolbar-button square is-small" on:click={undo} aria-label="Undo">
 				<span class="icon toolbar-icon">
@@ -42,24 +42,31 @@
 					<Fa icon={faRedo} />
 				</span>
 			</button>
+		</div>
+	</div>
+
+	<!-- Main tool buttons -->
+	<div style="display:flex; align-items:center; gap:0.5rem;">
+		<div class="buttons" role="toolbar" aria-label="Drawing tools" style="display:flex; align-items:center; gap:0.5rem;">
+			<button class="button toolbar-button" on:click={() => select('selector')} aria-label="Selector tool" aria-pressed={active === 'selector'} class:has-text-weight-bold={active === 'selector'} class:tool-active={active === 'selector'}>
+				<span class="icon toolbar-icon">
+					<Fa icon={faMousePointer} />
+				</span>
+			</button>
 			<button class="button toolbar-button" on:click={() => select('pen')} aria-label="Pen tool" aria-pressed={active === 'pen'} class:has-text-weight-bold={active === 'pen'} class:tool-active={active === 'pen'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faPen} />
 				</span>
-				<span>Pen</span>
 			</button>
 			<button class="button toolbar-button" on:click={() => select('textbox')} aria-label="Textbox tool" aria-pressed={active === 'textbox'} class:has-text-weight-bold={active === 'textbox'} class:tool-active={active === 'textbox'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faFont} />
 				</span>
-				<span>Textbox</span>
 			</button>
-			<!-- Eraser button immediately to the right of Textbox -->
 			<button class="button toolbar-button" on:click={() => select('eraser')} aria-label="Eraser tool" aria-pressed={active === 'eraser'} class:has-text-weight-bold={active === 'eraser'} class:tool-active={active === 'eraser'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faEraser} />
 				</span>
-				<span>Eraser</span>
 			</button>
 		</div>
 	</div>

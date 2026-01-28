@@ -31,8 +31,22 @@ let lastRenderedSpecStr: string | null = null;
 	        // clear existing contents so embed injects fresh DOM
 	        containerEl.innerHTML = '';
 	        const embed = (await import('vega-embed')).default;
-	        let parsed = specToRender;
-	        try { parsed = typeof specToRender === 'string' ? JSON.parse(specToRender) : specToRender; } catch (err) { parsed = specToRender; }
+	        let parsed: any = specToRender;
+	        if (typeof specToRender === 'string') {
+	            const s = specToRender.trim();
+	            // if it looks like JSON but fails to parse, abort to avoid embed treating it as a URL
+	            if (s.startsWith('{') || s.startsWith('[')) {
+	                try {
+	                    parsed = JSON.parse(specToRender);
+	                } catch (err) {
+	                    console.warn('doRenderSpec: invalid JSON spec string; aborting embed to avoid network fetch', err);
+	                    return;
+	                }
+	            } else {
+	                // not JSON-like; allow embed to treat as a URL
+	                parsed = specToRender;
+	            }
+	        }
 	        view = await embed(containerEl, parsed, { actions: false, renderer: 'canvas' });
 	    } catch (err) {
 	        console.warn('vega-embed render failed:', err);
@@ -168,8 +182,13 @@ let lastRenderedSpecStr: string | null = null;
 				const embed = (await import('vega-embed')).default;
 				if (containerEl && spec) {
 					let parsed = spec;
-					try { parsed = typeof spec === 'string' ? JSON.parse(spec) : spec; } catch (err) { parsed = spec; }
-					view = await embed(containerEl, parsed, { actions: false, renderer: 'canvas' });
+					if (typeof spec === 'string') {
+						const s = spec.trim();
+						if (s.startsWith('{') || s.startsWith('[')) {
+							try { parsed = JSON.parse(spec); } catch (err) { console.warn('onMount: initial spec string is invalid JSON; skipping initial embed', err); parsed = null; }
+						}
+					}
+					if (parsed) view = await embed(containerEl, parsed, { actions: false, renderer: 'canvas' });
 				}
 			} catch (err) {
 				console.warn('vega-embed not available or failed to render', err);
@@ -375,7 +394,13 @@ let lastRenderedSpecStr: string | null = null;
 
 	function clearCanvas() {
 		if (!ctx || !canvasEl) return;
-		ctx!.clearRect(0,0,canvasEl.width, canvasEl.height);
+		const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
+		try {
+			ctx!.clearRect(0, 0, Math.round(canvasEl.width / dpr), Math.round(canvasEl.height / dpr));
+		} catch (err) {
+			// fallback
+			ctx!.clearRect(0, 0, canvasEl.width, canvasEl.height);
+		}
 	}
 
 	function updateText(id: string, newText: string) {
@@ -725,30 +750,32 @@ let lastRenderedSpecStr: string | null = null;
 
 <div class="box" style="height:100%; position:relative; display:flex; flex-direction:column;">
 
-	<div class="content" style="flex:1 1 auto; min-height:0; position:relative;" bind:this={contentEl}>
-		<div bind:this={containerEl} style="height:100%; width:100%; background:#fff; display:flex; align-items:center; justify-content:center; position:relative; pointer-events:none; z-index:1;">
+	<div class="content" style="flex:1 1 auto; min-height:0; position:relative; z-index:0;" bind:this={contentEl}>
+		<div bind:this={containerEl} style="height:100%; width:100%; background:#fff; display:flex; align-items:center; justify-content:center; position:relative; pointer-events:none; z-index:0;">
 			{#if !spec}
 				<p class="has-text-grey">Vega-Lite visualization preview will render here.</p>
 			{/if}
 		</div>
+	</div>
 
-		<canvas bind:this={canvasEl}
-			style="position:absolute; left:0; top:0; right:0; bottom:0; pointer-events:auto; touch-action:none; z-index:9999;"
-			on:pointerdown={pointerDown}
-			on:pointermove={pointerMove}
-			on:pointerup={pointerUp}
-			aria-label="Drawing canvas overlay"></canvas>
+	<!-- Place canvas and overlays as siblings of .content so they reliably overlay the preview -->
+	<canvas bind:this={canvasEl}
+		style="position:absolute; left:0; top:0; right:0; bottom:0; pointer-events:auto; touch-action:none; z-index:50000;"
+		on:pointerdown={pointerDown}
+		on:pointermove={pointerMove}
+		on:pointerup={pointerUp}
+		aria-label="Drawing canvas overlay"></canvas>
 
-		<!-- overlays layer sits above the canvas; layer ignores pointer events except active textareas -->
-		<div class="overlays" class:pointer-active={editingId} style="position:absolute; left:0; top:0; right:0; bottom:0; z-index:10000;">
-			{#each $texts as t (t.id)}
-				{#if t.id === editingId}
-					<div bind:this={textareaWrapperRef} style="position:absolute; pointer-events:auto;">
-						<textarea
-							bind:this={textareaRef}
-							class="text-overlay"
-							style="position:relative; z-index:1; min-width:40px; min-height:20px; border:1px dashed rgba(0,0,0,0.35); background:transparent; padding:4px; font:14px sans-serif; color:#000; resize:none; caret-color: rgba(0,0,0,0.85);"
-							bind:value={editingText}
+	<!-- overlays layer sits above the canvas; layer ignores pointer events except active textareas -->
+	<div class="overlays" class:pointer-active={editingId} style="position:absolute; left:0; top:0; right:0; bottom:0; z-index:50001;">
+		{#each $texts as t (t.id)}
+			{#if t.id === editingId}
+				<div bind:this={textareaWrapperRef} style="position:absolute; pointer-events:auto; z-index:50002;">
+					<textarea
+						bind:this={textareaRef}
+						class="text-overlay"
+						style="position:relative; z-index:50003; min-width:40px; min-height:20px; border:1px dashed rgba(0,0,0,0.35); background:transparent; padding:4px; font:14px sans-serif; color:#000; resize:none; caret-color: rgba(0,0,0,0.85);"
+						bind:value={editingText}
 						on:input={() => { adjustTextareaSize(); }}
 						on:blur={() => {
 						// delay commit briefly to let a resize start handler run (it sets isResizing)
@@ -756,48 +783,49 @@ let lastRenderedSpecStr: string | null = null;
 							if (ignoreNextBlur) { ignoreNextBlur = false; return; }
 							if (!isResizing) finishEditing();
 						}, 0);
-					}}
+						}}
 						on:keydown={(e) => {
-							if (e.key === 'Escape') { /* cancel edit - discard current editing text */ cancelEditing(); }
-							// allow Enter to insert newline; Ctrl/Cmd+Enter commits
-							if ((e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
-								textareaRef && textareaRef.blur();
-							}
+						if (e.key === 'Escape') { /* cancel edit - discard current editing text */ cancelEditing(); }
+						// allow Enter to insert newline; Ctrl/Cmd+Enter commits
+						if ((e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+							textareaRef && textareaRef.blur();
+						}
 						}}
 						on:pointerdown={(e) => {
-							e.stopPropagation();
-							// ensure textarea gets focus and caret placed where clicked
-							try {
-								textareaRef?.focus();
-								const pos = (textareaRef && typeof textareaRef.selectionStart === 'number') ? textareaRef.selectionStart : textareaRef?.value.length ?? 0;
-								textareaRef?.setSelectionRange(pos, pos);
-							} catch (err) {}
+						 e.stopPropagation();
+						 // ensure textarea gets focus and caret placed where clicked
+						 try { textareaRef?.focus(); const pos = (textareaRef && typeof textareaRef.selectionStart === 'number') ? textareaRef.selectionStart : textareaRef?.value.length ?? 0; textareaRef?.setSelectionRange(pos, pos); } catch (err) {}
 						}}
 						></textarea>
 						<!-- resize handles: small circles at midpoints of each side -->
 						{#if editingId}
 							<!-- top -->
-							<div class="handle" on:pointerdown={(e) => startResize('top', e)} style="position:absolute; left:50%; transform:translateX(-50%); top:-6px; width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:n-resize; z-index:1001; pointer-events:auto;"></div>
+							<div class="handle" on:pointerdown={(e) => startResize('top', e)} style="position:absolute; left:50%; transform:translateX(-50%); top:-6px; width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:n-resize; z-index:50004; pointer-events:auto;"></div>
 							<!-- right -->
-							<div class="handle" on:pointerdown={(e) => startResize('right', e)} style="position:absolute; right:-6px; top:50%; transform:translateY(-50%); width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:e-resize; z-index:1001; pointer-events:auto;"></div>
+							<div class="handle" on:pointerdown={(e) => startResize('right', e)} style="position:absolute; right:-6px; top:50%; transform:translateY(-50%); width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:e-resize; z-index:50004; pointer-events:auto;"></div>
 							<!-- bottom -->
-							<div class="handle" on:pointerdown={(e) => startResize('bottom', e)} style="position:absolute; left:50%; transform:translateX(-50%); bottom:-6px; width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:s-resize; z-index:1001; pointer-events:auto;"></div>
+							<div class="handle" on:pointerdown={(e) => startResize('bottom', e)} style="position:absolute; left:50%; transform:translateX(-50%); bottom:-6px; width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:s-resize; z-index:50004; pointer-events:auto;"></div>
 							<!-- left -->
-							<div class="handle" on:pointerdown={(e) => startResize('left', e)} style="position:absolute; left:-6px; top:50%; transform:translateY(-50%); width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:w-resize; z-index:1001; pointer-events:auto;"></div>
+							<div class="handle" on:pointerdown={(e) => startResize('left', e)} style="position:absolute; left:-6px; top:50%; transform:translateY(-50%); width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:w-resize; z-index:50004; pointer-events:auto;"></div>
 						{/if}
 					</div>
 				{/if}
-			{/each}
-		</div>
+				{/each}
+			</div>
 	</div>
-</div>
 
-<style>
+	<style>
  	/* intentionally left empty; no global styles here */
  	.text-overlay:focus { outline: none; }
  	.text-overlay { box-sizing: border-box; }
  	.overlays { pointer-events: none; }
  	.overlays.pointer-active { pointer-events: auto; }
  	.handle { box-sizing: border-box; }
-</style>
 
+ 	/* Ensure common modal/dialog selectors sit above the canvas and overlays in all themes
+ 	   Force a very high z-index so third-party modals (Bootstrap, Bulma, native dialog, etc.)
+ 	   will render above the canvas. This avoids detecting modal state and is a minimal change. */
+ 	:global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
+ 		z-index: 100000 !important;
+ 	}
+</style>
