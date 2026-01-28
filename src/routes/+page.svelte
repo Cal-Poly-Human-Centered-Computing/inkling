@@ -1,6 +1,7 @@
 <script lang="ts">
     import { CodeEditor, ChatBox, Toolbar, CanvasView } from '$lib/components';
     import { loadDatasetFromUrl as loadDatasetFromUrlHelper } from '$lib/utils/datasetLoader';
+    import { setDatasetFromDfd, setDatasetUrl, getDfdFromStore, readPersistedDataset } from '$lib/utils/datasetStore';
 
     let code = `{
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
@@ -51,6 +52,32 @@
             try {
                 const res = await loadDatasetFromUrlHelper(detail.url);
                 console.log('Dataset loaded via helper:', res);
+
+                // Persist the dataset: prefer full df persistence when available
+                if (res && res.df) {
+                    try {
+                        await setDatasetFromDfd(res.df, detail.url);
+                        console.log('Persisted dataset to localStorage (from df)');
+                    } catch (serr) {
+                        console.warn('Failed to persist df, falling back to URL-only persist', serr);
+                        setDatasetUrl(detail.url);
+                    }
+                } else {
+                    // No df to persist; persist the URL reference only
+                    setDatasetUrl(detail.url);
+                    console.log('Persisted dataset URL only');
+                }
+
+                // Immediately rehydrate from storage and log to confirm
+                try {
+                    const persistedRaw = readPersistedDataset();
+                    console.log('Raw persisted payload:', persistedRaw);
+                    const rehydrated = await getDfdFromStore();
+                    console.log('Rehydrated DataFrame from storage:', rehydrated);
+                } catch (rehErr) {
+                    console.error('Failed to read/reconstruct persisted dataset', rehErr);
+                }
+
                 // Optionally: forward to canvas or store; kept as a log for now
             } catch (err) {
                 console.error('Failed to load dataset via helper:', err);
