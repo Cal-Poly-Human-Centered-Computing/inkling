@@ -4,7 +4,7 @@
     import { setDatasetFromDfd, setDatasetUrl, getDfdFromStore, readPersistedDataset } from '$lib/utils/datasetStore';
 
     let code = `{
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json"
 }`;
 
     let selectedTool: 'pen' | 'textbox' | 'eraser' = 'pen';
@@ -69,14 +69,15 @@
                 }
 
                 // Immediately rehydrate from storage and log to confirm
-                try {
-                    const persistedRaw = readPersistedDataset();
-                    console.log('Raw persisted payload:', persistedRaw);
-                    const rehydrated = await getDfdFromStore();
-                    console.log('Rehydrated DataFrame from storage:', rehydrated);
-                } catch (rehErr) {
-                    console.error('Failed to read/reconstruct persisted dataset', rehErr);
-                }
+                // TODO: remove this later; just for debugging
+                // try {
+                //     const persistedRaw = readPersistedDataset();
+                //     console.log('Raw persisted payload:', persistedRaw);
+                //     const rehydrated = await getDfdFromStore();
+                //     console.log('Rehydrated DataFrame from storage:', rehydrated);
+                // } catch (rehErr) {
+                //     console.error('Failed to read/reconstruct persisted dataset', rehErr);
+                // }
 
                 // Optionally: forward to canvas or store; kept as a log for now
             } catch (err) {
