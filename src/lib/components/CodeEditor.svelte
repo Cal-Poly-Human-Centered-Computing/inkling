@@ -255,7 +255,7 @@
 							</button>
 							{#if showDatasetHelp}
 								<div bind:this={helpPopoverEl} class="dataset-help-popover" role="dialog" aria-live="polite">
-									<p style="margin:0; font-size:0.9rem;">Any CSV files you upload are processed locally in your browser and are not sent to the AI server.</p>
+									<p style="margin:0; font-size:0.9rem;">Only CSV column names (not data values) are sent to the AI server to build the Vega-Lite specifications.</p>
 								</div>
 							{/if}
 						{/if}
