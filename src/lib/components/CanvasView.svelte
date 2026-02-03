@@ -1,17 +1,10 @@
 <script lang="ts">
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { writable } from 'svelte/store';
-	import { code as codeStore } from "$lib/stores/code";
+	import { code } from "$lib/stores/code";
 
-	export let spec: any = null;
+	// removed exported `spec` prop — CanvasView now reads the `code` store directly via `$code`
 	export let selectedTool: 'pen' | 'textbox' | 'eraser' | 'selector' = 'pen';
-
-	// prefer the store value when present
-	let internalSpec: any = null;
-
-	// subscribe to the code store
-	let unsubscribeCode: (() => void) | null = null;
-	unsubscribeCode = codeStore.subscribe((v: any) => { internalSpec = v; });
 
 	let containerEl: HTMLDivElement | null = null;
 	let contentEl: HTMLDivElement | null = null;
@@ -27,80 +20,80 @@
 	let lastRenderedSpecStr: string | null = null;
 
 	async function doRenderSpec(specToRender: any) {
-	    const toUse = internalSpec ?? specToRender;
-	    if (typeof window === 'undefined' || !containerEl || !toUse) return;
-	    try {
-	        // clear previous embed and finalize previous view if present
-	        try {
-	            if (view && view.view && typeof view.view.finalize === 'function') {
-	                view.view.finalize();
-	            }
-	        } catch (err) { /* ignore */ }
-	        // clear existing contents so embed injects fresh DOM
+		const toUse: any = ($code as any) ?? specToRender;
+		if (typeof window === 'undefined' || !containerEl || !toUse) return;
+		try {
+			// clear previous embed and finalize previous view if present
+			try {
+				if (view && view.view && typeof view.view.finalize === 'function') {
+					view.view.finalize();
+				}
+			} catch (err) { /* ignore */ }
+			// clear existing contents so embed injects fresh DOM
 			containerEl.innerHTML = '';
-	        const embed = (await import('vega-embed')).default;
-	        let parsed: any = toUse;
-	        if (typeof toUse === 'string') {
-	            const s = toUse.trim();
-	            // if it looks like JSON but fails to parse, abort to avoid embed treating it as a URL
-	            if (s.startsWith('{') || s.startsWith('[')) {
-	                try {
-	                    parsed = JSON.parse(toUse);
-	                } catch (err) {
-	                    console.warn('doRenderSpec: invalid JSON spec string; aborting embed to avoid network fetch', err);
-	                    return;
-	                }
-	            } else {
-	                // not JSON-like; allow embed to treat as a URL
-	                parsed = toUse;
-	            }
-	        }
-	        // request SVG renderer so Vega outputs DOM/SVG that can be inspected/selected
-	        view = await embed(containerEl, parsed, { actions: false, renderer: 'svg' });
-	        // allow pointer events on the vega container so its SVG can be interactive
-	        if (containerEl) containerEl.style.pointerEvents = 'auto';
-	    } catch (err) {
-	        console.warn('vega-embed render failed:', err);
-	    }
+			const embed = (await import('vega-embed')).default;
+			let parsed: any = toUse;
+			if (typeof toUse === 'string') {
+				const s = toUse.trim();
+				// if it looks like JSON but fails to parse, abort to avoid embed treating it as a URL
+				if (s.startsWith('{') || s.startsWith('[')) {
+					try {
+						parsed = JSON.parse(toUse);
+					} catch (err) {
+						console.warn('doRenderSpec: invalid JSON spec string; aborting embed to avoid network fetch', err);
+						return;
+					}
+				} else {
+					// not JSON-like; allow embed to treat as a URL
+					parsed = toUse;
+				}
+			}
+			// request SVG renderer so Vega outputs DOM/SVG that can be inspected/selected
+			view = await embed(containerEl, parsed, { actions: false, renderer: 'svg' });
+			// allow pointer events on the vega container so its SVG can be interactive
+			if (containerEl) containerEl.style.pointerEvents = 'auto';
+		} catch (err) {
+			console.warn('vega-embed render failed:', err);
+		}
 	}
 
 	function scheduleRender(specToSchedule: any) {
-	    const toUse = internalSpec ?? specToSchedule;
-	    // serialize spec for cheap equality checks
-	    let s: string;
-	    try { s = typeof toUse === 'string' ? toUse : JSON.stringify(toUse); } catch (err) { s = String(toUse); }
-	    // if we've already scheduled the same spec, don't re-schedule
-	    if (lastScheduledSpecStr === s) return;
-	    lastScheduledSpecStr = s;
+		const toUse: any = ($code as any) ?? specToSchedule;
+		// serialize spec for cheap equality checks
+		let s: string;
+		try { s = typeof toUse === 'string' ? toUse : JSON.stringify(toUse); } catch (err) { s = String(toUse); }
+		// if we've already scheduled the same spec, don't re-schedule
+		if (lastScheduledSpecStr === s) return;
+		lastScheduledSpecStr = s;
 
-	    if (renderTimeout) clearTimeout(renderTimeout);
-	    renderTimeout = setTimeout(() => {
-	        renderTimeout = null;
-	        // clear lastScheduled now that we're running
-	        lastScheduledSpecStr = null;
-	        doRenderSpec(specToSchedule).then(() => {
-	            // mark this spec as rendered
-	            lastRenderedSpecStr = s;
-	        }).catch(() => {
-	            // on error we still clear the scheduled marker so user can retry edits
-	            lastRenderedSpecStr = null;
-	        });
-	    }, RENDER_DEBOUNCE_MS);
+		if (renderTimeout) clearTimeout(renderTimeout);
+		renderTimeout = setTimeout(() => {
+			renderTimeout = null;
+			// clear lastScheduled now that we're running
+			lastScheduledSpecStr = null;
+			doRenderSpec(specToSchedule).then(() => {
+				// mark this spec as rendered
+				lastRenderedSpecStr = s;
+			}).catch(() => {
+				// on error we still clear the scheduled marker so user can retry edits
+				lastRenderedSpecStr = null;
+			});
+		}, RENDER_DEBOUNCE_MS);
 	}
 
-	// reactively schedule a render only when `spec` or the code store changes; do NOT read renderTimeout here
-	$: if (typeof window !== 'undefined' && (spec !== undefined || internalSpec !== undefined)) {
-	    const toSerialize = internalSpec ?? spec;
-	    try {
-	        const s = typeof toSerialize === 'string' ? toSerialize : JSON.stringify(toSerialize);
-	        if (lastRenderedSpecStr === s) {
-	            // already rendered; nothing to do
-	        } else {
-	            scheduleRender(toSerialize);
-	        }
-	    } catch (err) {
-	        scheduleRender(toSerialize);
-	    }
+	// reactively schedule a render only when the code store changes; do NOT read renderTimeout here
+	$: if (typeof window !== 'undefined' && $code !== undefined) {
+		const toSerialize: any = $code as any;
+		try {
+			const s = typeof toSerialize === 'string' ? toSerialize : JSON.stringify(toSerialize);
+			if (lastRenderedSpecStr === s) {
+				// already rendered; nothing to do
+			} else {
+				scheduleRender(toSerialize);
+			}
+		} catch (err) {
+			scheduleRender(toSerialize);
+		}
 	}
 
 	const strokes = writable<Array<Array<{x:number,y:number}>>>([]);
@@ -226,15 +219,18 @@
 		if (typeof window !== 'undefined') {
 			try {
 				const embed = (await import('vega-embed')).default;
-				if (containerEl && (internalSpec ?? spec)) {
-					let parsed = internalSpec ?? spec;
+				if (containerEl && ($code)) {
+					let parsed: any = $code; // original string-ish source
+					let parsedObj: any = parsed; // the value we'll pass to vega-embed (may be object or URL string)
 					if (typeof parsed === 'string') {
 						const s = parsed.trim();
 						if (s.startsWith('{') || s.startsWith('[')) {
-							try { parsed = JSON.parse(parsed); } catch (err) { console.warn('onMount: initial spec string is invalid JSON; skipping initial embed', err); parsed = null; }
+							try { parsedObj = JSON.parse(parsed); } catch (err) { console.warn('onMount: initial spec string is invalid JSON; skipping initial embed', err); parsedObj = null; }
+						} else {
+							parsedObj = parsed;
 						}
 					}
-					if (parsed) view = await embed(containerEl, parsed, { actions: false, renderer: 'svg' });
+					if (parsedObj) view = await embed(containerEl, parsedObj, { actions: false, renderer: 'svg' });
 				}
 			} catch (err) {
 				console.warn('vega-embed not available or failed to render', err);
@@ -262,8 +258,6 @@
 		try {
 			if (view && view.view && typeof view.view.finalize === 'function') view.view.finalize();
 		} catch (err) { /* ignore */ }
-		// unsubscribe store
-		try { if (unsubscribeCode) unsubscribeCode(); } catch (err) {}
 	});
 
 	// remove canvas resize logic - SVG uses bounding box for coordinates
@@ -863,11 +857,27 @@
     }
 </script>
 
+<style>
+    /* intentionally left empty; no global styles here */
+    .text-overlay:focus { outline: none; }
+    .text-overlay { box-sizing: border-box; }
+    .overlays { pointer-events: none; }
+    .overlays.pointer-active { pointer-events: auto; }
+    .handle { box-sizing: border-box; }
+
+    /* Ensure common modal/dialog selectors sit above the canvas and overlays in all themes
+   Force a very high z-index so third-party modals (Bootstrap, Bulma, native dialog, etc.)
+   will render above the canvas. This avoids detecting modal state and is a minimal change. */
+    :global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
+        z-index: 100000 !important;
+    }
+</style>
+
 <div class="box" style="height:100%; position:relative; display:flex; flex-direction:column;">
 
 	<div class="content" style="flex:1 1 auto; min-height:0; position:relative; z-index:0;" bind:this={contentEl}>
 		<div bind:this={containerEl} style="height:100%; width:100%; background:#fff; display:flex; align-items:center; justify-content:center; position:relative; pointer-events:auto; z-index:0;">
-			{#if !spec}
+			{#if !$code}
 				<p class="has-text-grey">Vega-Lite visualization preview will render here.</p>
 			{/if}
 		</div>
@@ -965,20 +975,5 @@
  			{/each}
  		</div>
 
- 		<style>
- 		    /* intentionally left empty; no global styles here */
- 		    .text-overlay:focus { outline: none; }
- 		    .text-overlay { box-sizing: border-box; }
- 		    .overlays { pointer-events: none; }
- 		    .overlays.pointer-active { pointer-events: auto; }
- 		    .handle { box-sizing: border-box; }
-
- 		    /* Ensure common modal/dialog selectors sit above the canvas and overlays in all themes
- 		   Force a very high z-index so third-party modals (Bootstrap, Bulma, native dialog, etc.)
- 		   will render above the canvas. This avoids detecting modal state and is a minimal change. */
- 		    :global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
- 				z-index: 100000 !important;
- 		    }
- 	 </style>
 
 </div>
