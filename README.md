@@ -36,3 +36,16 @@ npm run build
 You can preview the production build with `npm run preview`.
 
 > To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+
+## Environment
+
+This project uses a server-side OpenAI API key for the "Apply Changes" feature.
+
+- Copy `.env.example` to `.env` and set `OPENAI_API_KEY` to your key (do not commit `.env`).
+
+Example:
+
+```
+cp .env.example .env
+# edit .env and replace OPENAI_API_KEY
+```

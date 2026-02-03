@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-	import { writable } from 'svelte/store';
+	import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
 	import Fa from 'svelte-fa';
-	import { faUpload, faDatabase, faQuestionCircle } from '@fortawesome/free-solid-svg-icons';
-
-	export let code: string = '';
+	import { faUpload, faDatabase } from '@fortawesome/free-solid-svg-icons';
+	import { code as codeStore } from '$lib/stores/code';
+	import {get} from "svelte/store";
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -13,15 +12,13 @@
 	let editorView: any = null;
 	let containerPointerHandler: ((e: PointerEvent) => void) | null = null;
 
-	const codeStore = writable(code);
-
 	// upload modal state
 	let showUploadModal = false;
 	let selectedFile: File | null = null;
 	let fileInputEl: HTMLInputElement | null = null;
 
 	// dataset modal state
-	let showDatasetModal = false;
+	let showDatasetModal: boolean = false;
 	let datasetMode: 'file' | 'url' = 'file';
 	let datasetFile: File | null = null;
 	let datasetFileInput: HTMLInputElement | null = null;
@@ -44,7 +41,7 @@
 		const { json } = jsonModule;
 
 		const state = EditorState.create({
-			doc: code,
+			doc: get(codeStore),
 			extensions: [
 				json(),
 				// Theme to make editor fill container and allow scrolling
@@ -57,8 +54,8 @@
 				EditorView.updateListener.of((v: any) => {
 					if (v.docChanged) {
 						const val = v.state.doc.toString();
+						// Always let the editor listener be the single writer to the shared store
 						codeStore.set(val);
-						dispatch('codeChange', val);
 					}
 				})
 			]
@@ -77,6 +74,38 @@
 
 		editorMounted = true;
 	});
+
+	// Expose a method to let parents programmatically set the editor contents — treat it like a user edit
+	export async function setCode(newCode: string) {
+		// fallbackValue = newCode;
+		if (editorMounted && editorView) {
+			try {
+				// Programmatic replace: don't write the store here. The updateListener will observe the
+				// change and write to the store exactly once, same as a user edit.
+				editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: newCode } });
+				if (textareaFallback) textareaFallback.value = newCode;
+				// wait a tick so the editor and update listener run
+				await tick();
+				dispatch('codeApplied');
+			} catch (err) {
+				// fallback: if dispatch fails, write store directly
+				codeStore.set(newCode);
+				dispatch('codeApplied');
+			}
+		} else {
+			// editor not ready; set store directly and dispatch
+			codeStore.set(newCode);
+			dispatch('codeApplied');
+		}
+	}
+
+	// on fallback textarea input, write to store directly
+	let fallbackValue = get(codeStore) || '';
+	function onFallbackInput(e: Event) {
+		const t = e.target as HTMLTextAreaElement;
+		fallbackValue = t.value;
+		codeStore.set(t.value);
+	}
 
 	onDestroy(() => {
 	    try {
@@ -153,13 +182,6 @@
 		showDatasetHelp = false;
 		document.removeEventListener('mousedown', handleDocClick);
 		showDatasetModal = false;
-	}
-
-	let fallbackValue = code;
-	function onFallbackInput(e: Event) {
-		const t = e.target as HTMLTextAreaElement;
-		fallbackValue = t.value;
-		dispatch('codeChange', t.value);
 	}
 
 	// helpers for the dataset help popover
@@ -251,7 +273,7 @@
 						</div>
 						{#if datasetMode === 'file'}
 							<button class="button is-white help-icon-button" aria-label="Dataset help" bind:this={helpButtonEl} on:click={toggleDatasetHelp} aria-expanded={showDatasetHelp}>
-								<span class="icon is-small"><Fa icon={faQuestionCircle} /></span>
+								<span class="icon is-small">?</span>
 							</button>
 							{#if showDatasetHelp}
 								<div bind:this={helpPopoverEl} class="dataset-help-popover" role="dialog" aria-live="polite">

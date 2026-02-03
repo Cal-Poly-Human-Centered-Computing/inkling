@@ -1,9 +1,17 @@
 <script lang="ts">
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { writable } from 'svelte/store';
+	import { code as codeStore } from "$lib/stores/code";
 
 	export let spec: any = null;
 	export let selectedTool: 'pen' | 'textbox' | 'eraser' | 'selector' = 'pen';
+
+	// prefer the store value when present
+	let internalSpec: any = null;
+
+	// subscribe to the code store
+	let unsubscribeCode: (() => void) | null = null;
+	unsubscribeCode = codeStore.subscribe((v: any) => { internalSpec = v; });
 
 	let containerEl: HTMLDivElement | null = null;
 	let contentEl: HTMLDivElement | null = null;
@@ -14,12 +22,13 @@
 	let renderTimeout: ReturnType<typeof setTimeout> | null = null;
 	const RENDER_DEBOUNCE_MS = 800; // 800 ms
 
-// cache serialized specs so we only schedule/render when the spec actually changes
-let lastScheduledSpecStr: string | null = null;
-let lastRenderedSpecStr: string | null = null;
+	// cache serialized specs so we only schedule/render when the spec actually changes
+	let lastScheduledSpecStr: string | null = null;
+	let lastRenderedSpecStr: string | null = null;
 
 	async function doRenderSpec(specToRender: any) {
-	    if (typeof window === 'undefined' || !containerEl) return;
+	    const toUse = internalSpec ?? specToRender;
+	    if (typeof window === 'undefined' || !containerEl || !toUse) return;
 	    try {
 	        // clear previous embed and finalize previous view if present
 	        try {
@@ -28,22 +37,22 @@ let lastRenderedSpecStr: string | null = null;
 	            }
 	        } catch (err) { /* ignore */ }
 	        // clear existing contents so embed injects fresh DOM
-	        containerEl.innerHTML = '';
+			containerEl.innerHTML = '';
 	        const embed = (await import('vega-embed')).default;
-	        let parsed: any = specToRender;
-	        if (typeof specToRender === 'string') {
-	            const s = specToRender.trim();
+	        let parsed: any = toUse;
+	        if (typeof toUse === 'string') {
+	            const s = toUse.trim();
 	            // if it looks like JSON but fails to parse, abort to avoid embed treating it as a URL
 	            if (s.startsWith('{') || s.startsWith('[')) {
 	                try {
-	                    parsed = JSON.parse(specToRender);
+	                    parsed = JSON.parse(toUse);
 	                } catch (err) {
 	                    console.warn('doRenderSpec: invalid JSON spec string; aborting embed to avoid network fetch', err);
 	                    return;
 	                }
 	            } else {
 	                // not JSON-like; allow embed to treat as a URL
-	                parsed = specToRender;
+	                parsed = toUse;
 	            }
 	        }
 	        // request SVG renderer so Vega outputs DOM/SVG that can be inspected/selected
@@ -56,9 +65,10 @@ let lastRenderedSpecStr: string | null = null;
 	}
 
 	function scheduleRender(specToSchedule: any) {
+	    const toUse = internalSpec ?? specToSchedule;
 	    // serialize spec for cheap equality checks
 	    let s: string;
-	    try { s = typeof specToSchedule === 'string' ? specToSchedule : JSON.stringify(specToSchedule); } catch (err) { s = String(specToSchedule); }
+	    try { s = typeof toUse === 'string' ? toUse : JSON.stringify(toUse); } catch (err) { s = String(toUse); }
 	    // if we've already scheduled the same spec, don't re-schedule
 	    if (lastScheduledSpecStr === s) return;
 	    lastScheduledSpecStr = s;
@@ -78,19 +88,18 @@ let lastRenderedSpecStr: string | null = null;
 	    }, RENDER_DEBOUNCE_MS);
 	}
 
-	// reactively schedule a render only when `spec` changes; do NOT read renderTimeout here
-	$: if (typeof window !== 'undefined' && spec !== undefined) {
-	    // if the spec is identical to what is already rendered, skip scheduling
+	// reactively schedule a render only when `spec` or the code store changes; do NOT read renderTimeout here
+	$: if (typeof window !== 'undefined' && (spec !== undefined || internalSpec !== undefined)) {
+	    const toSerialize = internalSpec ?? spec;
 	    try {
-	        const s = typeof spec === 'string' ? spec : JSON.stringify(spec);
+	        const s = typeof toSerialize === 'string' ? toSerialize : JSON.stringify(toSerialize);
 	        if (lastRenderedSpecStr === s) {
 	            // already rendered; nothing to do
 	        } else {
-	            scheduleRender(spec);
+	            scheduleRender(toSerialize);
 	        }
 	    } catch (err) {
-	        // fallback: schedule render if serialization fails
-	        scheduleRender(spec);
+	        scheduleRender(toSerialize);
 	    }
 	}
 
@@ -217,12 +226,12 @@ let lastRenderedSpecStr: string | null = null;
 		if (typeof window !== 'undefined') {
 			try {
 				const embed = (await import('vega-embed')).default;
-				if (containerEl && spec) {
-					let parsed = spec;
-					if (typeof spec === 'string') {
-						const s = spec.trim();
+				if (containerEl && (internalSpec ?? spec)) {
+					let parsed = internalSpec ?? spec;
+					if (typeof parsed === 'string') {
+						const s = parsed.trim();
 						if (s.startsWith('{') || s.startsWith('[')) {
-							try { parsed = JSON.parse(spec); } catch (err) { console.warn('onMount: initial spec string is invalid JSON; skipping initial embed', err); parsed = null; }
+							try { parsed = JSON.parse(parsed); } catch (err) { console.warn('onMount: initial spec string is invalid JSON; skipping initial embed', err); parsed = null; }
 						}
 					}
 					if (parsed) view = await embed(containerEl, parsed, { actions: false, renderer: 'svg' });
@@ -253,6 +262,8 @@ let lastRenderedSpecStr: string | null = null;
 		try {
 			if (view && view.view && typeof view.view.finalize === 'function') view.view.finalize();
 		} catch (err) { /* ignore */ }
+		// unsubscribe store
+		try { if (unsubscribeCode) unsubscribeCode(); } catch (err) {}
 	});
 
 	// remove canvas resize logic - SVG uses bounding box for coordinates
