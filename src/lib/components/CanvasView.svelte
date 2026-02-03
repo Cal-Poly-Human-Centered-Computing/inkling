@@ -19,8 +19,8 @@
 	let lastScheduledSpecStr: string | null = null;
 	let lastRenderedSpecStr: string | null = null;
 
-	async function doRenderSpec(specToRender: any) {
-		const toUse: any = ($code as any) ?? specToRender;
+	async function doRenderSpec() {
+		const toUse: any = $code as any;
 		if (typeof window === 'undefined' || !containerEl || !toUse) return;
 		try {
 			// clear previous embed and finalize previous view if present
@@ -57,8 +57,8 @@
 		}
 	}
 
-	function scheduleRender(specToSchedule: any) {
-		const toUse: any = ($code as any) ?? specToSchedule;
+	function scheduleRender() {
+		const toUse: any = $code as any;
 		// serialize spec for cheap equality checks
 		let s: string;
 		try { s = typeof toUse === 'string' ? toUse : JSON.stringify(toUse); } catch (err) { s = String(toUse); }
@@ -71,7 +71,7 @@
 			renderTimeout = null;
 			// clear lastScheduled now that we're running
 			lastScheduledSpecStr = null;
-			doRenderSpec(specToSchedule).then(() => {
+			doRenderSpec().then(() => {
 				// mark this spec as rendered
 				lastRenderedSpecStr = s;
 			}).catch(() => {
@@ -89,10 +89,10 @@
 			if (lastRenderedSpecStr === s) {
 				// already rendered; nothing to do
 			} else {
-				scheduleRender(toSerialize);
+				scheduleRender();
 			}
 		} catch (err) {
-			scheduleRender(toSerialize);
+			scheduleRender();
 		}
 	}
 
