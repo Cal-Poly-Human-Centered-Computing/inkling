@@ -3,7 +3,7 @@
 	import { writable } from 'svelte/store';
 
 	export let spec: any = null;
-	export let selectedTool: 'pen' | 'textbox' | 'eraser' = 'pen';
+	export let selectedTool: 'pen' | 'textbox' | 'eraser' | 'selector' = 'pen';
 
 	let containerEl: HTMLDivElement | null = null;
 	let contentEl: HTMLDivElement | null = null;
@@ -132,6 +132,47 @@ let lastRenderedSpecStr: string | null = null;
 	let _lastWrapperTop: number | null = null;
 	let _lastWrapperWidth: number | null = null;
 	let _lastWrapperHeight: number | null = null;
+
+	// Start editing an existing text item (used by the selector tool)
+	function editText(t: { id: string; x: number; y: number; text: string; width?: number; height?: number; fontSize?: string; fontFamily?: string; fontWeight?: string; fontStyle?: string }) {
+        if (!t) return;
+        // set editing geometry from the item's stored geometry
+        editingId = t.id;
+        editingText = t.text ?? '';
+        editingX = t.x ?? 0;
+        editingY = t.y ? t.y - 13 : 0;
+        editingWidth = t.width ?? 160;
+        editingHeight = t.height ?? 24;
+
+        // prime the wrapper cache so the overlay doesn't jump on first render
+        if (svgEl) {
+            try {
+                 _lastWrapperLeft = Math.round(editingX - TEXT_BORDER - TEXT_PAD);
+                 _lastWrapperTop = Math.round(editingY - TEXT_BORDER - TEXT_PAD);
+                 _lastWrapperWidth = Math.round(editingWidth);
+                 _lastWrapperHeight = Math.round(editingHeight);
+            } catch (err) {
+                _lastWrapperLeft = null;
+                _lastWrapperTop = null;
+                _lastWrapperWidth = null;
+                _lastWrapperHeight = null;
+            }
+        }
+
+        // wait for DOM to render textarea overlay, then size and focus it
+        tick().then(() => {
+            try {
+                if (textareaRef) {
+                    textareaRef.style.width = editingWidth + 'px';
+                    textareaRef.style.height = editingHeight + 'px';
+                    adjustTextareaSize();
+                    textareaRef.focus();
+                    const len = textareaRef.value.length;
+                    textareaRef.setSelectionRange(len, len);
+                }
+            } catch (err) { /* ignore */ }
+        });
+    }
 
 	function snapshot() {
 		// serialize strokes and texts
@@ -326,8 +367,19 @@ let lastRenderedSpecStr: string | null = null;
 		const id = editingId;
 		editingId = null;
 		editingText = '';
-		texts.update(arr => arr.filter(t => t.id !== id));
-		snapshot();
+		// Determine whether this item previously existed and had content. If it was an existing
+		// non-empty text item, cancelling should NOT delete it. We only remove newly-created
+		// blank textboxes (the ones created when user picked the textbox tool).
+		let prevItem: any = null;
+		texts.subscribe(v => { prevItem = (v || []).find((it: any) => it.id === id) || null; })();
+		if (prevItem) {
+			if ((prevItem.text || '').toString().trim() === '') {
+				// newly created blank textbox: remove it, but don't snapshot (it's not a meaningful change)
+				texts.update(arr => arr.filter(t => t.id !== id));
+			} else {
+				// existing non-empty item: leave it as-is (discard any uncommitted edits) and don't snapshot
+			}
+		}
 	}
 
 	function pointerMove(e: PointerEvent) {
@@ -466,78 +518,93 @@ let lastRenderedSpecStr: string | null = null;
 		const id = editingId;
 		// clear editingId first so overlay doesn't duplicate content
 		editingId = null;
+
+		// Capture previous item so we can detect whether anything meaningful changed
+		let prevItem: any = null;
+		texts.subscribe(v => { prevItem = (v || []).find((it: any) => it.id === id) || null; })();
+
 		if (editingText.trim() === '') {
 			// remove empty textbox
 			texts.update(arr => arr.filter(t => t.id !== id));
-		} else {
-			// compute final position and size from the textarea's bounding rect so SVG alignment is exact
-			let finalX = editingX;
-			let finalY = editingY;
-			let finalW = editingWidth;
-			let finalH = editingHeight;
-			try {
-				if (textareaWrapperRef && svgEl) {
-					const tr = textareaWrapperRef.getBoundingClientRect();
-					const cr = svgEl.getBoundingClientRect();
-					// read computed padding/border from the textarea if available for pixel-perfect alignment
-					let padLeft = TEXT_PAD, padTop = TEXT_PAD;
-					let borderLeft = TEXT_BORDER, borderTop = TEXT_BORDER;
-					try {
-						if (textareaRef) {
-							const cs = window.getComputedStyle(textareaRef);
-							padLeft = parseFloat(cs.paddingLeft || String(TEXT_PAD)) || TEXT_PAD;
-							padTop = parseFloat(cs.paddingTop || String(TEXT_PAD)) || TEXT_PAD;
-							borderLeft = parseFloat(cs.borderLeftWidth || String(TEXT_BORDER)) || TEXT_BORDER;
-							borderTop = parseFloat(cs.borderTopWidth || String(TEXT_BORDER)) || TEXT_BORDER;
-						}
-					} catch (err) { /* ignore */ }
-					// store the content origin (inside-border + padding) so SVG drawing aligns exactly
-					finalX = tr.left - cr.left + borderLeft + padLeft;
-					finalY = tr.top - cr.top + borderTop + padTop + 13;
-					finalW = textareaWrapperRef.offsetWidth;
-					finalH = textareaWrapperRef.offsetHeight;
-				}
-			} catch (err) {
-				// fallback to editingX/Y
+			// Only snapshot if the previous item existed and had non-empty text (i.e. this is a meaningful deletion)
+			if (prevItem && (prevItem.text && String(prevItem.text).trim() !== '')) {
+				snapshot();
 			}
-
-			// Attempt to preserve visually-wrapped lines (textarea soft-wrapping)
-			let finalText = editingText;
-			let finalFontSize: string | undefined = undefined;
-			let finalFontFamily: string | undefined = undefined;
-			let finalFontWeight: string | undefined = undefined;
-			let finalFontStyle: string | undefined = undefined;
-			try {
-				if (textareaRef) {
-					const cs = window.getComputedStyle(textareaRef);
-					const fontSize = cs.fontSize || '14px';
-					const fontFamily = cs.fontFamily || 'sans-serif';
-					const fontWeight = cs.fontWeight || 'normal';
-					const fontStyle = cs.fontStyle || '';
-					const cssFont = `${fontStyle} ${fontWeight} ${fontSize} ${fontFamily}`.trim();
-
-					// capture the final font properties to store with the text item
-					finalFontSize = fontSize;
-					finalFontFamily = fontFamily;
-					finalFontWeight = fontWeight;
-					finalFontStyle = fontStyle;
-
-					// content width: clientWidth includes padding, so subtract left/right padding to get text area
-					const padLeft = parseFloat(cs.paddingLeft || String(TEXT_PAD)) || TEXT_PAD;
-					const padRight = parseFloat(cs.paddingRight || String(TEXT_PAD)) || TEXT_PAD;
-					const contentWidth = Math.max(10, textareaRef.clientWidth - padLeft - padRight);
-
-					finalText = wrapTextToWidth(editingText, contentWidth, cssFont);
-				}
-			} catch (err) {
-				// ignore wrapping failures and fall back to raw text
-			}
-
-			texts.update(arr => arr.map(t => t.id === id ? { ...t, text: finalText, width: finalW, height: finalH, x: finalX, y: finalY, fontSize: finalFontSize ?? t.fontSize, fontFamily: finalFontFamily ?? t.fontFamily, fontWeight: finalFontWeight ?? t.fontWeight, fontStyle: finalFontStyle ?? t.fontStyle } : t));
-			// DOM will update automatically
+			editingText = '';
+			return;
 		}
+
+		// compute final position and size from the textarea's bounding rect so SVG alignment is exact
+		let finalX = editingX;
+		let finalY = editingY;
+		let finalW = editingWidth;
+		let finalH = editingHeight;
+		try {
+			if (textareaWrapperRef && svgEl) {
+				const tr = textareaWrapperRef.getBoundingClientRect();
+				const cr = svgEl.getBoundingClientRect();
+				// read computed padding/border from the textarea if available for pixel-perfect alignment
+				let padLeft = TEXT_PAD, padTop = TEXT_PAD;
+				let borderLeft = TEXT_BORDER, borderTop = TEXT_BORDER;
+				try {
+					if (textareaRef) {
+						const cs = window.getComputedStyle(textareaRef);
+						padLeft = parseFloat(cs.paddingLeft || String(TEXT_PAD)) || TEXT_PAD;
+						padTop = parseFloat(cs.paddingTop || String(TEXT_PAD)) || TEXT_PAD;
+						borderLeft = parseFloat(cs.borderLeftWidth || String(TEXT_BORDER)) || TEXT_BORDER;
+						borderTop = parseFloat(cs.borderTopWidth || String(TEXT_BORDER)) || TEXT_BORDER;
+					}
+				} catch (err) { /* ignore */ }
+				// store the content origin (inside-border + padding) so SVG drawing aligns exactly
+				finalX = tr.left - cr.left + borderLeft + padLeft;
+				finalY = tr.top - cr.top + borderTop + padTop + 13;
+				finalW = textareaWrapperRef.offsetWidth;
+				finalH = textareaWrapperRef.offsetHeight;
+			}
+		} catch (err) {
+			// fallback to editingX/Y
+		}
+
+		// Attempt to preserve visually-wrapped lines (textarea soft-wrapping)
+		let finalText = editingText;
+		try {
+			if (textareaRef) {
+				const cs = window.getComputedStyle(textareaRef);
+				const fontSize = cs.fontSize || '14px';
+				const fontFamily = cs.fontFamily || 'sans-serif';
+				const fontWeight = cs.fontWeight || 'normal';
+				const fontStyle = cs.fontStyle || '';
+				const cssFont = `${fontStyle} ${fontWeight} ${fontSize} ${fontFamily}`.trim();
+
+				// content width: clientWidth includes padding, so subtract left/right padding to get text area
+				const padLeft = parseFloat(cs.paddingLeft || String(TEXT_PAD)) || TEXT_PAD;
+				const padRight = parseFloat(cs.paddingRight || String(TEXT_PAD)) || TEXT_PAD;
+				const contentWidth = Math.max(10, textareaRef.clientWidth - padLeft - padRight);
+
+				finalText = wrapTextToWidth(editingText, contentWidth, cssFont);
+			}
+		} catch (err) {
+			// ignore wrapping failures and fall back to raw text
+		}
+
+		// Determine whether anything meaningful changed compared to previous item
+		let changed = false;
+		if (!prevItem) changed = true; else {
+			// compare text, geometry, and font properties
+			if ((prevItem.text || '') !== finalText) changed = true;
+			else if ((prevItem.width || 0) !== finalW) changed = true;
+			else if ((prevItem.height || 0) !== finalH) changed = true;
+			else if ((prevItem.x || 0) !== finalX) changed = true;
+			else if ((prevItem.y || 0) !== finalY) changed = true;
+		}
+
+		// Apply update
+		texts.update(arr => arr.map(t => t.id === id ? { ...t, text: finalText, width: finalW, height: finalH, x: finalX, y: finalY } : t));
+		// DOM will update automatically
+
 		editingText = '';
-		snapshot();
+		// Only snapshot when something actually changed
+		if (changed) snapshot();
 	}
 
 	// auto-resize textarea to fit content and stay within container
@@ -772,6 +839,17 @@ let lastRenderedSpecStr: string | null = null;
 	        // ignore
 	    }
 	}
+
+	// helper: handle keyboard activation of a text group (Enter/Space)
+    function onTextGroupKeyDown(e: KeyboardEvent, t: any) {
+        try {
+            const k = e && (e as KeyboardEvent).key || '';
+            if (selectedTool === 'selector' && (k === 'Enter' || k === ' ' || k === 'Spacebar')) {
+                e.preventDefault();
+                editText(t);
+            }
+        } catch (err) { /* ignore */ }
+    }
 </script>
 
 <div class="box" style="height:100%; position:relative; display:flex; flex-direction:column;">
@@ -813,7 +891,7 @@ let lastRenderedSpecStr: string | null = null;
  		<!-- Render non-editing texts as SVG <text> so they can be selected/moved if desired -->
 		{#each $texts as t (t.id)}
 			{#if t.id !== editingId}
-				<g transform={`translate(${t.x}, ${t.y})`} style="pointer-events:auto;">
+				<g transform={`translate(${t.x}, ${t.y})`} style="pointer-events:auto; cursor: {selectedTool === 'selector' ? 'move' : 'default'};" role="button" tabindex="0" on:click={() => { if (selectedTool === 'selector') editText(t); }} on:keydown={(e) => onTextGroupKeyDown(e, t)}>
 					<text font-size={t.fontSize ?? '14px'} font-family={t.fontFamily ?? 'sans-serif'} font-weight={t.fontWeight ?? 'normal'} font-style={t.fontStyle ?? ''} fill="#000">
 						{#each (t.text || '').split('\n') as line, idx}
 							{#if idx === 0}
@@ -877,19 +955,19 @@ let lastRenderedSpecStr: string | null = null;
  		</div>
 
  		<style>
- 	    	/* intentionally left empty; no global styles here */
- 	    	.text-overlay:focus { outline: none; }
- 	    	.text-overlay { box-sizing: border-box; }
- 	    	.overlays { pointer-events: none; }
- 	    	.overlays.pointer-active { pointer-events: auto; }
- 	    	.handle { box-sizing: border-box; }
+ 		    /* intentionally left empty; no global styles here */
+ 		    .text-overlay:focus { outline: none; }
+ 		    .text-overlay { box-sizing: border-box; }
+ 		    .overlays { pointer-events: none; }
+ 		    .overlays.pointer-active { pointer-events: auto; }
+ 		    .handle { box-sizing: border-box; }
 
- 	    	/* Ensure common modal/dialog selectors sit above the canvas and overlays in all themes
- 	   	   Force a very high z-index so third-party modals (Bootstrap, Bulma, native dialog, etc.)
- 	   	   will render above the canvas. This avoids detecting modal state and is a minimal change. */
- 	    	:global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
- 	    		z-index: 100000 !important;
- 	    	}
+ 		    /* Ensure common modal/dialog selectors sit above the canvas and overlays in all themes
+ 		   Force a very high z-index so third-party modals (Bootstrap, Bulma, native dialog, etc.)
+ 		   will render above the canvas. This avoids detecting modal state and is a minimal change. */
+ 		    :global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
+ 				z-index: 100000 !important;
+ 		    }
  	 </style>
 
 </div>
