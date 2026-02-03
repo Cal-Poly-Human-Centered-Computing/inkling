@@ -7,8 +7,7 @@
 
 	let containerEl: HTMLDivElement | null = null;
 	let contentEl: HTMLDivElement | null = null;
-	let canvasEl: HTMLCanvasElement | null = null;
-	let ctx: CanvasRenderingContext2D | null = null;
+	let svgEl: SVGSVGElement | null = null;
 	let view: any = null;
 
 	// debounced rendering of the Vega-Lite spec
@@ -47,7 +46,10 @@ let lastRenderedSpecStr: string | null = null;
 	                parsed = specToRender;
 	            }
 	        }
-	        view = await embed(containerEl, parsed, { actions: false, renderer: 'canvas' });
+	        // request SVG renderer so Vega outputs DOM/SVG that can be inspected/selected
+	        view = await embed(containerEl, parsed, { actions: false, renderer: 'svg' });
+	        // allow pointer events on the vega container so its SVG can be interactive
+	        if (containerEl) containerEl.style.pointerEvents = 'auto';
 	    } catch (err) {
 	        console.warn('vega-embed render failed:', err);
 	    }
@@ -94,7 +96,7 @@ let lastRenderedSpecStr: string | null = null;
 
 	const strokes = writable<Array<Array<{x:number,y:number}>>>([]);
 	// texts now have an id so overlays can be tracked
-	const texts = writable<Array<{id:string,x:number,y:number,text:string,width?:number,height?:number}>>([]);
+	const texts = writable<Array<{id:string,x:number,y:number,text:string,width?:number,height?:number,fontSize?:string,fontFamily?:string,fontWeight?:string,fontStyle?:string}>>([]);
 
 	// editing geometry when a text box is active
 	let editingX = 0;
@@ -161,6 +163,7 @@ let lastRenderedSpecStr: string | null = null;
 			const obj = JSON.parse(snapStr);
 			strokes.set(obj.strokes || []);
 			texts.set(obj.texts || []);
+			// drawAll is now DOM-driven; keep for compatibility as noop
 			drawAll();
 		} catch (err) {
 			console.warn('failed to restore snapshot', err);
@@ -168,14 +171,7 @@ let lastRenderedSpecStr: string | null = null;
 	}
 
 	onMount(async () => {
-		if (canvasEl) {
-			ctx = canvasEl.getContext('2d');
-			resizeCanvas();
-			if (typeof window !== 'undefined') {
-				window.addEventListener('resize', resizeCanvas);
-			}
-		}
-
+		// no canvas context - SVG overlay will be used
 		// Render Vega-Lite spec using vega-embed (client-only)
 		if (typeof window !== 'undefined') {
 			try {
@@ -188,7 +184,7 @@ let lastRenderedSpecStr: string | null = null;
 							try { parsed = JSON.parse(spec); } catch (err) { console.warn('onMount: initial spec string is invalid JSON; skipping initial embed', err); parsed = null; }
 						}
 					}
-					if (parsed) view = await embed(containerEl, parsed, { actions: false, renderer: 'canvas' });
+					if (parsed) view = await embed(containerEl, parsed, { actions: false, renderer: 'svg' });
 				}
 			} catch (err) {
 				console.warn('vega-embed not available or failed to render', err);
@@ -205,7 +201,6 @@ let lastRenderedSpecStr: string | null = null;
 
 	onDestroy(() => {
 		if (typeof window !== 'undefined') {
-			window.removeEventListener('resize', resizeCanvas);
 			window.removeEventListener('pointerdown', onGlobalPointerDown, true);
 		}
 		// clear any pending render timeout
@@ -219,27 +214,21 @@ let lastRenderedSpecStr: string | null = null;
 		} catch (err) { /* ignore */ }
 	});
 
-	function resizeCanvas() {
-		if (!canvasEl || !containerEl) return;
-		const cw = containerEl.clientWidth;
-		const ch = containerEl.clientHeight;
-		const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
-		// set CSS size
-		canvasEl.style.width = cw + 'px';
-		canvasEl.style.height = ch + 'px';
-		// set backing store size for crisp drawing on high-DPI
-		canvasEl.width = Math.round(cw * dpr);
-		canvasEl.height = Math.round(ch * dpr);
-		if (!ctx) ctx = canvasEl.getContext('2d');
-		// reset transform so 1 unit in canvas = 1 CSS pixel
-		ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
-		drawAll();
+	// remove canvas resize logic - SVG uses bounding box for coordinates
+	function toLocalCoords(e: PointerEvent) {
+		const el = svgEl ?? containerEl ?? null;
+		if (!el) return { x: 0, y: 0 };
+		const rect = el.getBoundingClientRect();
+		return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 	}
 
-	function toLocalCoords(e: PointerEvent) {
-		if (!canvasEl) return { x: 0, y: 0 };
-		const rect = canvasEl.getBoundingClientRect();
-		return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+	// helper: convert a stroke (array of points) to an SVG path string
+	function strokeToPath(stroke: Array<{x:number,y:number}>) {
+	    if (!stroke || stroke.length === 0) return '';
+	    const parts: string[] = [];
+	    parts.push(`M ${stroke[0].x} ${stroke[0].y}`);
+	    for (let i = 1; i < stroke.length; i++) parts.push(`L ${stroke[i].x} ${stroke[i].y}`);
+	    return parts.join(' ');
 	}
 
 	function eraseAt(p: {x:number,y:number}) {
@@ -255,16 +244,13 @@ let lastRenderedSpecStr: string | null = null;
 			return true; // keep
 		}));
 		if (removed) snapshot();
+		// drawAll is DOM-driven
 		drawAll();
 	}
 
 	function ensureCanvasReady() {
-		if (!canvasEl) return;
-		if (!ctx) ctx = canvasEl.getContext('2d');
-		// if canvas has no size, resize from container
-		if (canvasEl.width === 0 || canvasEl.height === 0) {
-			resizeCanvas();
-		}
+		// kept for compatibility - ensure SVG element exists
+		if (!svgEl) return;
 	}
 
 	function pointerDown(e: PointerEvent) {
@@ -289,11 +275,10 @@ let lastRenderedSpecStr: string | null = null;
 			currentStroke = [];
 			currentStroke.push(p);
 			strokes.update(s => { s.push(currentStroke!); return s; });
-			drawAll();
-			// capture pointer so we continue receiving move/up events even if pointer leaves canvas
+			// DOM will update the SVG path automatically
 			try {
-				if (canvasEl && (canvasEl as any).setPointerCapture) {
-					(canvasEl as any).setPointerCapture(e.pointerId);
+				if (svgEl && (svgEl as any).setPointerCapture) {
+					(svgEl as any).setPointerCapture(e.pointerId);
 				}
 			} catch (err) {
 				// ignore if not supported
@@ -305,7 +290,8 @@ let lastRenderedSpecStr: string | null = null;
 			editingY = p.y;
 			editingWidth = 160;
 			editingHeight = 24;
-			texts.update(t => { t.push({ id, x: p.x, y: p.y, text: '', width: editingWidth, height: editingHeight }); return t; });
+			// include default font properties so SVG uses consistent rendering
+			texts.update(arr => { arr.push({ id, x: p.x, y: p.y, text: '', width: editingWidth, height: editingHeight, fontSize: '14px', fontFamily: 'sans-serif', fontWeight: 'normal', fontStyle: '' }); return arr; });
 			editingId = id;
 			editingText = '';
 			// wait for DOM to render the textarea and focus it
@@ -322,13 +308,13 @@ let lastRenderedSpecStr: string | null = null;
 				}
 			});
 			// don't snapshot yet; wait until user finishes editing (on blur)
-		} else if (selectedTool === 'eraser') {
+ 		} else if (selectedTool === 'eraser') {
 			// start erasing at the clicked point and capture pointer to continue erasing while dragging
 			isErasing = true;
 			eraseAt(p);
 			try {
-				if (canvasEl && (canvasEl as any).setPointerCapture) {
-					(canvasEl as any).setPointerCapture(e.pointerId);
+				if (svgEl && (svgEl as any).setPointerCapture) {
+					(svgEl as any).setPointerCapture(e.pointerId);
 				}
 			} catch (err) {}
 		}
@@ -357,7 +343,8 @@ let lastRenderedSpecStr: string | null = null;
 		e.preventDefault();
 		const p = toLocalCoords(e);
 		currentStroke.push(p);
-		drawAll();
+		// strokes store updated -> SVG path updates automatically
+		strokes.update(s => s);
 	}
 
 	function pointerUp(_e?: PointerEvent) {
@@ -369,8 +356,8 @@ let lastRenderedSpecStr: string | null = null;
 			snapshot();
 			// release pointer capture if present
 			try {
-				if (canvasEl && _e && (canvasEl as any).releasePointerCapture) {
-					(canvasEl as any).releasePointerCapture(_e.pointerId);
+				if (svgEl && _e && (svgEl as any).releasePointerCapture) {
+					(svgEl as any).releasePointerCapture(_e.pointerId);
 				}
 			} catch (err) {
 				// ignore
@@ -382,8 +369,8 @@ let lastRenderedSpecStr: string | null = null;
 			isErasing = false;
 			// release pointer capture if present
 			try {
-				if (canvasEl && _e && (canvasEl as any).releasePointerCapture) {
-					(canvasEl as any).releasePointerCapture(_e.pointerId);
+				if (svgEl && _e && (svgEl as any).releasePointerCapture) {
+					(svgEl as any).releasePointerCapture(_e.pointerId);
 				}
 			} catch (err) {
 				// ignore
@@ -393,40 +380,105 @@ let lastRenderedSpecStr: string | null = null;
 	}
 
 	function clearCanvas() {
-		if (!ctx || !canvasEl) return;
-		const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
-		try {
-			ctx!.clearRect(0, 0, Math.round(canvasEl.width / dpr), Math.round(canvasEl.height / dpr));
-		} catch (err) {
-			// fallback
-			ctx!.clearRect(0, 0, canvasEl.width, canvasEl.height);
-		}
+		// noop for SVG-driven rendering; kept for API/backwards compatibility
 	}
 
 	function updateText(id: string, newText: string) {
 		texts.update(arr => arr.map(t => t.id === id ? { ...t, text: newText, width: t.width ?? editingWidth, height: t.height ?? editingHeight } : t));
+		// DOM-driven; no imperative draw
 		drawAll();
+	}
+
+	let measureCtx: CanvasRenderingContext2D | null = null;
+
+	// helper: measure a string width using canvas 2D context for the given CSS font
+	function measureTextWidth(text: string, cssFont: string) {
+	    try {
+	        if (!measureCtx) {
+	            const c = document.createElement('canvas');
+	            measureCtx = c.getContext('2d');
+	        }
+	        if (!measureCtx) return text.length * 7; // fallback
+	        measureCtx.font = cssFont || '14px sans-serif';
+	        const m = measureCtx.measureText(text);
+	        return m.width || 0;
+	    } catch (err) {
+	        return text.length * 7;
+	    }
+	}
+
+	// Wrap text to a maximum pixel width using the provided CSS font
+	function wrapTextToWidth(text: string, maxWidth: number, cssFont: string) {
+	    if (!text || maxWidth <= 0) return text;
+	    const paragraphs = text.split('\n');
+	    const outLines: string[] = [];
+
+	    for (const para of paragraphs) {
+	        const words = para.split(/(\s+)/); // keep spaces so we can preserve multiple spaces
+	        let line = '';
+	        for (let i = 0; i < words.length; i++) {
+	            const word = words[i];
+	            // if adding this word exceeds width, flush current line
+	            const candidate = line + word;
+	            const w = measureTextWidth(candidate.replace(/\s+/g, ' '), cssFont);
+	            if (w <= maxWidth) {
+	                line = candidate;
+	            } else {
+	                if (line.trim().length > 0) {
+	                    outLines.push(line.replace(/\s+$/, ''));
+	                    line = '';
+	                }
+	                // If the single word is wider than the box, break the word
+	                let remaining = word;
+	                // break long continuous segment
+	                while (measureTextWidth(remaining.replace(/\s+/g, ' '), cssFont) > maxWidth && remaining.length > 1) {
+	                    // binary-search approximate break point
+	                    let lo = 0, hi = remaining.length;
+	                    while (lo < hi) {
+	                        const mid = Math.ceil((lo + hi) / 2);
+	                        const part = remaining.slice(0, mid);
+	                        if (measureTextWidth(part.replace(/\s+/g, ' '), cssFont) <= maxWidth) lo = mid; else hi = mid - 1;
+	                        if (lo === hi - 1) break;
+	                    }
+	                    const cut = Math.max(1, lo);
+	                    outLines.push(remaining.slice(0, cut));
+	                    remaining = remaining.slice(cut);
+	                }
+	                // remaining fits
+	                if (remaining.trim().length > 0) {
+	                    line = remaining;
+	                } else {
+	                    line = '';
+	                }
+	            }
+	        }
+	        if (line.length > 0) outLines.push(line.replace(/\s+$/, ''));
+	        // preserve empty paragraph as blank line
+	        if (para === '' && outLines.length === 0) outLines.push('');
+	    }
+
+	    return outLines.join('\n');
 	}
 
 	function finishEditing() {
 		// commit current editingText to the store for the editingId, then clear editing state
 		if (!editingId) return;
 		const id = editingId;
-		// clear editingId first so drawAll doesn't skip this id
+		// clear editingId first so overlay doesn't duplicate content
 		editingId = null;
 		if (editingText.trim() === '') {
 			// remove empty textbox
 			texts.update(arr => arr.filter(t => t.id !== id));
 		} else {
-			// compute final position and size from the textarea's bounding rect so canvas alignment is exact
+			// compute final position and size from the textarea's bounding rect so SVG alignment is exact
 			let finalX = editingX;
 			let finalY = editingY;
 			let finalW = editingWidth;
 			let finalH = editingHeight;
 			try {
-				if (textareaWrapperRef && canvasEl) {
+				if (textareaWrapperRef && svgEl) {
 					const tr = textareaWrapperRef.getBoundingClientRect();
-					const cr = canvasEl.getBoundingClientRect();
+					const cr = svgEl.getBoundingClientRect();
 					// read computed padding/border from the textarea if available for pixel-perfect alignment
 					let padLeft = TEXT_PAD, padTop = TEXT_PAD;
 					let borderLeft = TEXT_BORDER, borderTop = TEXT_BORDER;
@@ -439,18 +491,50 @@ let lastRenderedSpecStr: string | null = null;
 							borderTop = parseFloat(cs.borderTopWidth || String(TEXT_BORDER)) || TEXT_BORDER;
 						}
 					} catch (err) { /* ignore */ }
-					// store the content origin (inside-border + padding) so canvas drawing aligns exactly
+					// store the content origin (inside-border + padding) so SVG drawing aligns exactly
 					finalX = tr.left - cr.left + borderLeft + padLeft;
-					finalY = tr.top - cr.top + borderTop + padTop;
+					finalY = tr.top - cr.top + borderTop + padTop + 13;
 					finalW = textareaWrapperRef.offsetWidth;
 					finalH = textareaWrapperRef.offsetHeight;
 				}
 			} catch (err) {
 				// fallback to editingX/Y
 			}
-			texts.update(arr => arr.map(t => t.id === id ? { ...t, text: editingText, width: finalW, height: finalH, x: finalX, y: finalY } : t));
-			// ensure a draw after updating
-			drawAll();
+
+			// Attempt to preserve visually-wrapped lines (textarea soft-wrapping)
+			let finalText = editingText;
+			let finalFontSize: string | undefined = undefined;
+			let finalFontFamily: string | undefined = undefined;
+			let finalFontWeight: string | undefined = undefined;
+			let finalFontStyle: string | undefined = undefined;
+			try {
+				if (textareaRef) {
+					const cs = window.getComputedStyle(textareaRef);
+					const fontSize = cs.fontSize || '14px';
+					const fontFamily = cs.fontFamily || 'sans-serif';
+					const fontWeight = cs.fontWeight || 'normal';
+					const fontStyle = cs.fontStyle || '';
+					const cssFont = `${fontStyle} ${fontWeight} ${fontSize} ${fontFamily}`.trim();
+
+					// capture the final font properties to store with the text item
+					finalFontSize = fontSize;
+					finalFontFamily = fontFamily;
+					finalFontWeight = fontWeight;
+					finalFontStyle = fontStyle;
+
+					// content width: clientWidth includes padding, so subtract left/right padding to get text area
+					const padLeft = parseFloat(cs.paddingLeft || String(TEXT_PAD)) || TEXT_PAD;
+					const padRight = parseFloat(cs.paddingRight || String(TEXT_PAD)) || TEXT_PAD;
+					const contentWidth = Math.max(10, textareaRef.clientWidth - padLeft - padRight);
+
+					finalText = wrapTextToWidth(editingText, contentWidth, cssFont);
+				}
+			} catch (err) {
+				// ignore wrapping failures and fall back to raw text
+			}
+
+			texts.update(arr => arr.map(t => t.id === id ? { ...t, text: finalText, width: finalW, height: finalH, x: finalX, y: finalY, fontSize: finalFontSize ?? t.fontSize, fontFamily: finalFontFamily ?? t.fontFamily, fontWeight: finalFontWeight ?? t.fontWeight, fontStyle: finalFontStyle ?? t.fontStyle } : t));
+			// DOM will update automatically
 		}
 		editingText = '';
 		snapshot();
@@ -484,67 +568,9 @@ let lastRenderedSpecStr: string | null = null;
 		textareaRef.style.height = editingHeight + 'px';
 	}
 
+	// drawAll used to paint to the canvas; with SVG we render via Svelte markup so keep drawAll as a noop for compatibility
 	function drawAll() {
-		if (!ctx || !canvasEl) return;
-		clearCanvas();
-		// configure text baseline to top so canvas y matches textarea top
-		ctx!.textBaseline = 'top';
-		// draw strokes
-		let sarr: Array<Array<{x:number,y:number}>> = [];
-		strokes.subscribe(v => sarr = v)();
-		ctx!.lineJoin = 'round';
-		ctx!.lineCap = 'round';
-		ctx!.strokeStyle = 'red';
-		ctx!.lineWidth = 2;
-		sarr.forEach(st => {
-			if (st.length < 1) return;
-			ctx!.beginPath();
-			ctx!.moveTo(st[0].x, st[0].y);
-			for (let i=1;i<st.length;i++) ctx!.lineTo(st[i].x, st[i].y);
-			ctx!.stroke();
-		});
-
-		// draw texts (skip the one currently being edited so overlay doesn't duplicate)
-		let tarr: Array<{id:string,x:number,y:number,text:string,width?:number,height?:number}> = [];
-		texts.subscribe(v => tarr = v)();
-		ctx!.fillStyle = 'black';
-		ctx!.font = '14px sans-serif';
-		const lineHeight = 18; // px
-		tarr.forEach(t => {
-			if (t.id === editingId) return;
-			// available width inside the textbox (subtract padding and borders)
-			const boxW = (t.width ?? editingWidth) - (TEXT_PAD * 2) - (TEXT_BORDER * 2);
-			const startX = t.x; // t.x is stored as content origin (includes border+padding)
-			let y = t.y; // t.y is content origin
-			if (!boxW || boxW < 20) {
-				// just draw raw text at padded position
-				ctx!.fillText(t.text, startX, y);
-				return;
-			}
-			// handle explicit newlines and wrapping
-			const paragraphs = t.text.split('\n');
-			paragraphs.forEach(p => {
-				const words = p.split(' ');
-				let line = '';
-				for (let n=0;n<words.length;n++) {
-					const testLine = line ? (line + ' ' + words[n]) : words[n];
-					const metrics = ctx!.measureText(testLine);
-					const testWidth = metrics.width;
-					if (testWidth > boxW && line) {
-						ctx!.fillText(line, startX, y);
-						line = words[n];
-						y += lineHeight;
-					} else {
-						line = testLine;
-					}
-				}
-				// last line
-				if (line) {
-					ctx!.fillText(line, startX, y);
-					y += lineHeight;
-				}
-			});
-		});
+		return;
 	}
 
 	function startResize(side: 'left'|'right'|'top'|'bottom', e: PointerEvent) {
@@ -562,8 +588,8 @@ let lastRenderedSpecStr: string | null = null;
 		try {
 			if (textareaWrapperRef) {
 				resizeStartRect = textareaWrapperRef.getBoundingClientRect();
-			} else if (canvasEl) {
-				const cr = canvasEl.getBoundingClientRect();
+			} else if (svgEl) {
+				const cr = svgEl.getBoundingClientRect();
 				// synthesize a rect from editingX/Y/W/H (editingX/Y are content origin)
 				const left = cr.left + editingX - TEXT_BORDER - TEXT_PAD;
 				const top = cr.top + editingY - TEXT_BORDER - TEXT_PAD;
@@ -580,9 +606,9 @@ let lastRenderedSpecStr: string | null = null;
 	}
 
 	function onResizeMove(e: PointerEvent) {
-		if (!isResizing || !resizeSide || !resizeStartRect || !textareaWrapperRef || !canvasEl) return;
+		if (!isResizing || !resizeSide || !resizeStartRect || !textareaWrapperRef || !svgEl) return;
 
-		const canvasRect = canvasEl.getBoundingClientRect();
+		const canvasRect = svgEl.getBoundingClientRect();
 
 		const startLeft = resizeStartRect.left;
 		const startRight = resizeStartRect.right;
@@ -652,10 +678,10 @@ let lastRenderedSpecStr: string | null = null;
 		window.removeEventListener('pointerup', endResize);
 
 		try {
-			if (textareaWrapperRef && canvasEl) {
+			if (textareaWrapperRef && svgEl) {
 				const tr = textareaWrapperRef.getBoundingClientRect();
-				const cr = canvasEl.getBoundingClientRect();
-				// compute content origin using computed padding/border if available
+				const cr = svgEl.getBoundingClientRect();
+				// compute content origin using computed padding/border if available for pixel-perfect alignment
 				let padLeft = TEXT_PAD, padTop = TEXT_PAD;
 				let borderLeft = TEXT_BORDER, borderTop = TEXT_BORDER;
 				try {
@@ -751,81 +777,119 @@ let lastRenderedSpecStr: string | null = null;
 <div class="box" style="height:100%; position:relative; display:flex; flex-direction:column;">
 
 	<div class="content" style="flex:1 1 auto; min-height:0; position:relative; z-index:0;" bind:this={contentEl}>
-		<div bind:this={containerEl} style="height:100%; width:100%; background:#fff; display:flex; align-items:center; justify-content:center; position:relative; pointer-events:none; z-index:0;">
+		<div bind:this={containerEl} style="height:100%; width:100%; background:#fff; display:flex; align-items:center; justify-content:center; position:relative; pointer-events:auto; z-index:0;">
 			{#if !spec}
 				<p class="has-text-grey">Vega-Lite visualization preview will render here.</p>
 			{/if}
 		</div>
 	</div>
 
-	<!-- Place canvas and overlays as siblings of .content so they reliably overlay the preview -->
-	<canvas bind:this={canvasEl}
-		style="position:absolute; left:0; top:0; right:0; bottom:0; pointer-events:auto; touch-action:none; z-index:50000;"
+	<!-- Replace canvas with an SVG overlay that renders strokes and texts as DOM elements -->
+	<svg bind:this={svgEl}
+		style="position:absolute; left:0; top:0; right:0; bottom:0; width:100%; height:100%; pointer-events:auto; touch-action:none; z-index:30;"
 		on:pointerdown={pointerDown}
 		on:pointermove={pointerMove}
 		on:pointerup={pointerUp}
-		aria-label="Drawing canvas overlay"></canvas>
+		aria-label="Drawing SVG overlay">
 
-	<!-- overlays layer sits above the canvas; layer ignores pointer events except active textareas -->
-	<div class="overlays" class:pointer-active={editingId} style="position:absolute; left:0; top:0; right:0; bottom:0; z-index:50001;">
+		<defs>
+			<!-- Placeholder for stroke markers / defs if needed -->
+		</defs>
+
+		<!-- render strokes as individual path elements so they can be selected/manipulated -->
+		{#each $strokes as st, i (i)}
+			<path
+				d={strokeToPath(st)}
+				fill="none"
+				stroke="red"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				stroke-width="2"
+				data-index={i}
+				style="pointer-events: stroke;"
+			/>
+ 		{/each}
+
+ 		<!-- Render non-editing texts as SVG <text> so they can be selected/moved if desired -->
 		{#each $texts as t (t.id)}
-			{#if t.id === editingId}
-				<div bind:this={textareaWrapperRef} style="position:absolute; pointer-events:auto; z-index:50002;">
-					<textarea
-						bind:this={textareaRef}
-						class="text-overlay"
-						style="position:relative; z-index:50003; min-width:40px; min-height:20px; border:1px dashed rgba(0,0,0,0.35); background:transparent; padding:4px; font:14px sans-serif; color:#000; resize:none; caret-color: rgba(0,0,0,0.85);"
-						bind:value={editingText}
-						on:input={() => { adjustTextareaSize(); }}
-						on:blur={() => {
-						// delay commit briefly to let a resize start handler run (it sets isResizing)
-						setTimeout(() => {
-							if (ignoreNextBlur) { ignoreNextBlur = false; return; }
-							if (!isResizing) finishEditing();
-						}, 0);
-						}}
-						on:keydown={(e) => {
-						if (e.key === 'Escape') { /* cancel edit - discard current editing text */ cancelEditing(); }
-						// allow Enter to insert newline; Ctrl/Cmd+Enter commits
-						if ((e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
-							textareaRef && textareaRef.blur();
-						}
-						}}
-						on:pointerdown={(e) => {
-						 e.stopPropagation();
-						 // ensure textarea gets focus and caret placed where clicked
-						 try { textareaRef?.focus(); const pos = (textareaRef && typeof textareaRef.selectionStart === 'number') ? textareaRef.selectionStart : textareaRef?.value.length ?? 0; textareaRef?.setSelectionRange(pos, pos); } catch (err) {}
-						}}
-						></textarea>
-						<!-- resize handles: small circles at midpoints of each side -->
-						{#if editingId}
-							<!-- top -->
-							<div class="handle" on:pointerdown={(e) => startResize('top', e)} style="position:absolute; left:50%; transform:translateX(-50%); top:-6px; width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:n-resize; z-index:50004; pointer-events:auto;"></div>
-							<!-- right -->
-							<div class="handle" on:pointerdown={(e) => startResize('right', e)} style="position:absolute; right:-6px; top:50%; transform:translateY(-50%); width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:e-resize; z-index:50004; pointer-events:auto;"></div>
-							<!-- bottom -->
-							<div class="handle" on:pointerdown={(e) => startResize('bottom', e)} style="position:absolute; left:50%; transform:translateX(-50%); bottom:-6px; width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:s-resize; z-index:50004; pointer-events:auto;"></div>
-							<!-- left -->
-							<div class="handle" on:pointerdown={(e) => startResize('left', e)} style="position:absolute; left:-6px; top:50%; transform:translateY(-50%); width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:w-resize; z-index:50004; pointer-events:auto;"></div>
-						{/if}
-					</div>
-				{/if}
-				{/each}
-			</div>
-	</div>
+			{#if t.id !== editingId}
+				<g transform={`translate(${t.x}, ${t.y})`} style="pointer-events:auto;">
+					<text font-size={t.fontSize ?? '14px'} font-family={t.fontFamily ?? 'sans-serif'} font-weight={t.fontWeight ?? 'normal'} font-style={t.fontStyle ?? ''} fill="#000">
+						{#each (t.text || '').split('\n') as line, idx}
+							{#if idx === 0}
+								{line}
+							{:else}
+								<tspan x="0" dy="1.2em">{line}</tspan>
+							{/if}
+						{/each}
+					</text>
+				</g>
+			{/if}
+		{/each}
 
-	<style>
- 	/* intentionally left empty; no global styles here */
- 	.text-overlay:focus { outline: none; }
- 	.text-overlay { box-sizing: border-box; }
- 	.overlays { pointer-events: none; }
- 	.overlays.pointer-active { pointer-events: auto; }
- 	.handle { box-sizing: border-box; }
+ 	</svg>
 
- 	/* Ensure common modal/dialog selectors sit above the canvas and overlays in all themes
- 	   Force a very high z-index so third-party modals (Bootstrap, Bulma, native dialog, etc.)
- 	   will render above the canvas. This avoids detecting modal state and is a minimal change. */
- 	:global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
- 		z-index: 100000 !important;
- 	}
-</style>
+ 	<!-- overlays layer sits above the canvas; layer ignores pointer events except active textareas -->
+ 	<div class="overlays" class:pointer-active={editingId} style="position:absolute; left:0; top:0; right:0; bottom:0; z-index:31;">
+ 		{#each $texts as t (t.id)}
+ 			{#if t.id === editingId}
+ 				<div bind:this={textareaWrapperRef} style="position:absolute; pointer-events:auto; z-index:32;">
+ 					<textarea
+ 						bind:this={textareaRef}
+ 						class="text-overlay"
+ 						style={`position:relative; z-index:33; min-width:40px; min-height:20px; border:1px dashed rgba(0,0,0,0.35); background:transparent; padding:4px; color:#000; resize:none; caret-color: rgba(0,0,0,0.85); font: ${t.fontSize ?? '14px'} ${t.fontFamily ?? 'sans-serif'}; font-weight: ${t.fontWeight ?? 'normal'}; font-style: ${t.fontStyle ?? 'normal'};`}
+ 						bind:value={editingText}
+ 						on:input={() => { adjustTextareaSize(); }}
+ 						on:blur={() => {
+ 						// delay commit briefly to let a resize start handler run (it sets isResizing)
+ 						setTimeout(() => {
+ 							if (ignoreNextBlur) { ignoreNextBlur = false; return; }
+ 							if (!isResizing) finishEditing();
+ 						}, 0);
+ 						}}
+ 						on:keydown={(e) => {
+ 						if (e.key === 'Escape') { /* cancel edit - discard current editing text */ cancelEditing(); }
+ 						// allow Enter to insert newline; Ctrl/Cmd+Enter commits
+ 						if ((e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+ 							textareaRef && textareaRef.blur();
+ 						}
+ 						}}
+ 						on:pointerdown={(e) => {
+ 						 e.stopPropagation();
+ 						 // ensure textarea gets focus and caret placed where clicked
+ 						 try { textareaRef?.focus(); const pos = (textareaRef && typeof textareaRef.selectionStart === 'number') ? textareaRef.selectionStart : textareaRef?.value.length ?? 0; textareaRef?.setSelectionRange(pos, pos); } catch (err) {}
+ 						}}
+ 						></textarea>
+ 						<!-- resize handles: small circles at midpoints of each side -->
+ 						{#if editingId}
+ 							<!-- top -->
+ 							<div class="handle" on:pointerdown={(e) => startResize('top', e)} style="position:absolute; left:50%; transform:translateX(-50%); top:-6px; width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:n-resize; z-index:34; pointer-events:auto;"></div>
+ 							<!-- right -->
+ 							<div class="handle" on:pointerdown={(e) => startResize('right', e)} style="position:absolute; right:-6px; top:50%; transform:translateY(-50%); width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:e-resize; z-index:34; pointer-events:auto;"></div>
+ 							<!-- bottom -->
+ 							<div class="handle" on:pointerdown={(e) => startResize('bottom', e)} style="position:absolute; left:50%; transform:translateX(-50%); bottom:-6px; width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:s-resize; z-index:34; pointer-events:auto;"></div>
+ 							<!-- left -->
+ 							<div class="handle" on:pointerdown={(e) => startResize('left', e)} style="position:absolute; left:-6px; top:50%; transform:translateY(-50%); width:12px; height:12px; border-radius:50%; background:#333; opacity:0.95; cursor:w-resize; z-index:34; pointer-events:auto;"></div>
+ 						{/if}
+ 					</div>
+ 				{/if}
+ 			{/each}
+ 		</div>
+
+ 		<style>
+ 	    	/* intentionally left empty; no global styles here */
+ 	    	.text-overlay:focus { outline: none; }
+ 	    	.text-overlay { box-sizing: border-box; }
+ 	    	.overlays { pointer-events: none; }
+ 	    	.overlays.pointer-active { pointer-events: auto; }
+ 	    	.handle { box-sizing: border-box; }
+
+ 	    	/* Ensure common modal/dialog selectors sit above the canvas and overlays in all themes
+ 	   	   Force a very high z-index so third-party modals (Bootstrap, Bulma, native dialog, etc.)
+ 	   	   will render above the canvas. This avoids detecting modal state and is a minimal change. */
+ 	    	:global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
+ 	    		z-index: 100000 !important;
+ 	    	}
+ 	 </style>
+
+</div>
