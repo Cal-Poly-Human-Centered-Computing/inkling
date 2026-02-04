@@ -120,6 +120,18 @@
           console.warn('CodeEditor reference missing; updating store directly');
           codeStore.set(extracted);
         }
+
+        // After the editor is updated and the visualization has time to re-render, clear overlays on the canvas
+        try {
+          // wait a tick for Svelte/Vega to pick up the new spec and render
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          if (canvasViewRef && typeof canvasViewRef.clearOverlays === 'function') {
+            canvasViewRef.clearOverlays();
+          }
+        } catch (err) {
+          console.warn('Failed to clear canvas overlays after applying changes', err);
+        }
+
         console.log('Replaced editor code from applyChanges response');
       } else {
         console.warn('No code block found in applyChanges response; leaving code unchanged');

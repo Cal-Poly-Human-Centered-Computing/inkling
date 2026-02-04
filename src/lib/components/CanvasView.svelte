@@ -440,6 +440,24 @@
 		// noop for SVG-driven rendering; kept for API/backwards compatibility
 	}
 
+	// Exported helper: clear all overlays (strokes and texts) and snapshot the cleared state
+	export function clearOverlays() {
+		try {
+			// If a textarea is being edited, blur/finish it first
+			try { if (textareaRef) textareaRef.blur(); } catch (_) {}
+			editingId = null;
+			editingText = '';
+			strokes.set([]);
+			texts.set([]);
+			// Record this change so it can be undone
+			snapshot();
+			// Update DOM (drawAll is a noop for SVG-driven rendering, but call for compatibility)
+			drawAll();
+		} catch (err) {
+			console.warn('clearOverlays failed', err);
+		}
+	}
+
 	function updateText(id: string, newText: string) {
 		texts.update(arr => arr.map(t => t.id === id ? { ...t, text: newText, width: t.width ?? editingWidth, height: t.height ?? editingHeight } : t));
 		// DOM-driven; no imperative draw
