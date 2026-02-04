@@ -24,13 +24,75 @@
     console.log('Selected tool:', selectedTool);
   }
 
+  // helper: convert data URL (data:<mime>;base64,...) to a Blob
+  function dataUrlToBlob(dataUrl: string): Blob {
+    const parts = dataUrl.split(',');
+    if (parts.length !== 2) throw new Error('Invalid data URL');
+    const meta = parts[0];
+    const base64 = parts[1];
+    const match = meta.match(/data:([^;]+);base64/);
+    const mime = match ? match[1] : 'image/png';
+    const binary = atob(base64);
+    const len = binary.length;
+    const u8 = new Uint8Array(len);
+    for (let i = 0; i < len; i++) u8[i] = binary.charCodeAt(i);
+    return new Blob([u8], { type: mime });
+  }
+
+  // helper: open a new blank tab and write a minimal HTML document embedding the image dataUrl
+  // returns true if successful, false if it failed (e.g., blocked by popup or write error)
+  function openImageInNewTab(dataUrl: string): boolean {
+    const win = window.open('', '_blank');
+    if (!win) return false;
+    try {
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>Export Preview</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#111;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh}img{max-width:100%;max-height:100%;object-fit:contain}</style></head><body><img src="${dataUrl}" alt="exported image"/></body></html>`;
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      return true;
+    } catch (err) {
+      try { win.close(); } catch (_) {}
+      return false;
+    }
+  }
+
   async function handleApplyChanges() {
     applying = true;
     try {
+      // Export canvas as base64 data URL for debugging and to send to the server
+      let dataUrl: string | null = null;
+      try {
+        if (canvasViewRef && typeof canvasViewRef.exportCanvasDataUrl === 'function') {
+          dataUrl = await canvasViewRef.exportCanvasDataUrl('image/png', undefined, window.devicePixelRatio ?? 1);
+          // robust preview: try writing into a new blank tab; fallback to blob URL if write fails
+          if (dataUrl) {
+            const opened = openImageInNewTab(dataUrl);
+            if (!opened) {
+              try {
+                const blob = dataUrlToBlob(dataUrl);
+                const url = URL.createObjectURL(blob);
+                try { window.open(url, '_blank'); } catch (err) { /* ignore */ }
+                // revoke after a short delay
+                setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 10000);
+              } catch (err) {
+                console.error('Blob fallback failed:', err);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to export canvas image:', err);
+        alert('Failed to export canvas image: ' + (err && (err as any).message ? (err as any).message : String(err)));
+        applying = false;
+        return;
+      }
+
+      const bodyPayload: any = dataUrl ? { image: dataUrl } : {};
+
       const resp = await fetch('/api/apply-changes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify(bodyPayload)
       });
 
       if (!resp.ok) {

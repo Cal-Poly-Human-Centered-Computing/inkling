@@ -855,6 +855,137 @@
             }
         } catch (err) { /* ignore */ }
     }
+
+	/**
+	 * Export the current canvas (vega visualization + SVG overlays) to a base64 data URL.
+	 * Commits any active text editing before export so the SVG overlay contains the current text.
+	 *
+	 * @param mime MIME type for export (default: 'image/png')
+	 * @param quality quality for lossy formats (JPEG) (optional)
+	 * @param scale pixel scale multiplier (default: window.devicePixelRatio || 1)
+	 * @returns Promise<string> that resolves to a data URL (e.g. 'data:image/png;base64,...')
+	 * @throws Error when export fails (including canvas taint due to cross-origin content)
+	 */
+	export async function exportCanvasDataUrl(mime: string = 'image/png', quality?: number, scale?: number): Promise<string> {
+		// Ensure any active textarea edits are committed so the export includes current text
+		try {
+			if (editingId) {
+				// finishEditing is defined in this file and will commit the textarea into the SVG texts
+				finishEditing();
+			}
+		} catch (err) {
+			// ignore commit failures but continue; export may still work
+		}
+
+		if (typeof window === 'undefined') throw new Error('exportCanvasDataUrl: window is not defined');
+
+		const usedScale = typeof scale === 'number' && isFinite(scale) && scale > 0 ? scale : (window.devicePixelRatio || 1);
+
+		// Determine container size (CSS pixels)
+		const rect = (containerEl || svgEl)?.getBoundingClientRect();
+		if (!rect) throw new Error('exportCanvasDataUrl: canvas container not available');
+		const cssW = Math.max(1, Math.round(rect.width));
+		const cssH = Math.max(1, Math.round(rect.height));
+		const pxW = Math.max(1, Math.round(cssW * usedScale));
+		const pxH = Math.max(1, Math.round(cssH * usedScale));
+
+		// Helper to serialize an SVG element to a standalone SVG string with explicit width/height and xmlns
+		function serializeSvg(svgNode: SVGElement | null, widthPx: number, heightPx: number) {
+			if (!svgNode) return null;
+			try {
+				const clone = svgNode.cloneNode(true) as SVGElement;
+				// Ensure xmlns present
+				if (!clone.getAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+				// Set width/height attributes to container CSS pixel size so rendering scales correctly when drawn to canvas
+				clone.setAttribute('width', String(widthPx));
+				clone.setAttribute('height', String(heightPx));
+				// Inline any external font/background styles if necessary is complex; rely on page CSS for now
+
+				// Inline serializer return
+				return new XMLSerializer().serializeToString(clone);
+			} catch (err) {
+				return null;
+			}
+		}
+
+		// Find the base visualization SVG inside the container (vega-embed writes an svg inside containerEl)
+		let baseSvg: SVGElement | null = null;
+		try {
+			if (containerEl) baseSvg = containerEl.querySelector('svg');
+		} catch (err) { baseSvg = null; }
+		// overlay svg is svgEl
+		const overlaySvg = svgEl;
+
+		const baseSvgStr = serializeSvg(baseSvg, cssW, cssH);
+		console.log(baseSvgStr);
+		const overlaySvgStr = serializeSvg(overlaySvg, cssW, cssH);
+
+		if (!baseSvgStr && !overlaySvgStr) throw new Error('exportCanvasDataUrl: no SVG content found to export');
+
+		// helper to load an SVG string into an Image
+		function loadImageFromSvgString(svgString: string) {
+			return new Promise<HTMLImageElement>((resolve, reject) => {
+				try {
+					const img = new Image();
+					// Use data URL with encoded SVG to avoid object URL lifetime management
+					img.onload = () => resolve(img);
+					img.onerror = () => reject(new Error('Failed to load SVG image for export'));
+					img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
+				} catch (err) { reject(err); }
+				});
+			}
+
+
+		// create offscreen canvas
+		const canvas = document.createElement('canvas');
+		canvas.width = pxW;
+		canvas.height = pxH;
+		// set css size for clarity if someone inspects the DOM
+		canvas.style.width = cssW + 'px';
+		canvas.style.height = cssH + 'px';
+		const ctx = canvas.getContext('2d');
+		if (!ctx) throw new Error('exportCanvasDataUrl: failed to get 2D context');
+
+		// Draw images in layer order: white background first, then base visualization, then overlays
+		try {
+			// Always clear and fill white background to ensure exported image isn't transparent
+			ctx.clearRect(0, 0, pxW, pxH);
+			ctx.fillStyle = '#ffffff';
+			ctx.fillRect(0, 0, pxW, pxH);
+
+			// If a base visualization SVG is present, draw it on top of the white background
+			if (baseSvgStr) {
+				const img = await loadImageFromSvgString(baseSvgStr);
+				ctx.drawImage(img, 0, 0, pxW, pxH);
+			}
+
+			// Draw overlays (strokes/text) above the visualization/background
+			if (overlaySvgStr) {
+				const img2 = await loadImageFromSvgString(overlaySvgStr);
+				ctx.drawImage(img2, 0, 0, pxW, pxH);
+			}
+		} catch (err: any) {
+			// If the canvas becomes tainted due to cross-origin resources, toDataURL will throw; surface a helpful message
+			throw new Error('exportCanvasDataUrl: failed to rasterize SVG layers (possible cross-origin/tainted canvas): ' + (err && err.message ? err.message : String(err)));
+		}
+
+		// Optionally warn about large payloads
+		try {
+			const approxBytes = Math.ceil((pxW * pxH * 4) / 0.75); // rough upper-bound after base64
+			if (approxBytes > 6 * 1024 * 1024) {
+				console.warn('exportCanvasDataUrl: exported image may be large (~' + Math.round(approxBytes / (1024 * 1024)) + ' MB). Consider reducing scale.');
+			}
+		} catch (_) { /* ignore */ }
+
+		// Return data URL. Use toDataURL (synchronous) — acceptable for this use-case; toBlob could be used if needed.
+		try {
+			return canvas.toDataURL(mime, quality as any);
+		} catch (err: any) {
+			throw new Error('exportCanvasDataUrl: failed to generate data URL (tainted canvas or other error): ' + (err && err.message ? err.message : String(err)));
+		}
+	}
+
+
 </script>
 
 <style>
