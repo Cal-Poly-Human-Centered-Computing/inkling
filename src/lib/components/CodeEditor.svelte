@@ -29,6 +29,10 @@
 	let helpButtonEl: HTMLButtonElement | null = null;
 	let helpPopoverEl: HTMLDivElement | null = null;
 
+	// hold canonical schema and data enforced into any incoming spec
+	const schema = "https://vega.github.io/schema/vega-lite/v5.json";
+	let data: any = null; // will be wired later when datasets are attached
+
 	onMount(async () => {
 		if (!editorContainer) return;
 		// Dynamic imports to avoid SSR issues
@@ -77,24 +81,59 @@
 
 	// Expose a method to let parents programmatically set the editor contents — treat it like a user edit
 	export async function setCode(newCode: string) {
-		// fallbackValue = newCode;
+		// We implement Option B (tolerant) fallback: try to parse incoming text as JSON.
+		// If parsing succeeds and top-level is an object, create a new object with "$schema" and "data" first
+		// and then copy the remaining keys in their original order. If parsing succeeds but top-level is not an object,
+		// wrap it under "spec" while still enforcing schema/data. If parsing fails, create a wrapper object that
+		// preserves the raw string under _user_raw and enforces schema/data.
+
+		let finalObj: any = null;
+		let finalString = '';
+
+		try {
+			const parsed = JSON.parse(newCode);
+			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+				// top-level object: build a new object where $schema and data are first
+				const rest: any = {};
+				for (const k of Object.keys(parsed)) {
+					if (k === '$schema' || k === 'data') continue; // skip these so we can place ours first
+					rest[k] = parsed[k];
+				}
+				finalObj = { '$schema': schema, 'data': data, ...rest };
+			} else {
+				// not an object (array/primitive): wrap under `spec`, maintaining order
+				finalObj = { '$schema': schema, 'data': data, 'spec': parsed };
+			}
+		} catch (err) {
+			// parsing failed: preserve raw input under `_user_raw` so the user content isn't lost
+			console.warn('setCode: incoming code not valid JSON; using tolerant fallback and preserving raw content.');
+			finalObj = { '$schema': schema, 'data': data, '_user_raw': newCode };
+		}
+
+		try {
+			finalString = JSON.stringify(finalObj, null, 2);
+		} catch (err) {
+			// unlikely, but ensure we still have a string to insert
+			finalString = String(finalObj);
+		}
+
 		if (editorMounted && editorView) {
 			try {
 				// Programmatic replace: don't write the store here. The updateListener will observe the
 				// change and write to the store exactly once, same as a user edit.
-				editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: newCode } });
-				if (textareaFallback) textareaFallback.value = newCode;
+				editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: finalString } });
+				if (textareaFallback) textareaFallback.value = finalString;
 				// wait a tick so the editor and update listener run
 				await tick();
 				dispatch('codeApplied');
 			} catch (err) {
 				// fallback: if dispatch fails, write store directly
-				codeStore.set(newCode);
+				codeStore.set(finalString);
 				dispatch('codeApplied');
 			}
 		} else {
 			// editor not ready; set store directly and dispatch
-			codeStore.set(newCode);
+			codeStore.set(finalString);
 			dispatch('codeApplied');
 		}
 	}

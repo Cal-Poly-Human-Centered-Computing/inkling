@@ -65,20 +65,20 @@
         if (canvasViewRef && typeof canvasViewRef.exportCanvasDataUrl === 'function') {
           dataUrl = await canvasViewRef.exportCanvasDataUrl('image/png', undefined, window.devicePixelRatio ?? 1);
           // robust preview: try writing into a new blank tab; fallback to blob URL if write fails
-          if (dataUrl) {
-            const opened = openImageInNewTab(dataUrl);
-            if (!opened) {
-              try {
-                const blob = dataUrlToBlob(dataUrl);
-                const url = URL.createObjectURL(blob);
-                try { window.open(url, '_blank'); } catch (err) { /* ignore */ }
-                // revoke after a short delay
-                setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 10000);
-              } catch (err) {
-                console.error('Blob fallback failed:', err);
-              }
-            }
-          }
+          // if (dataUrl) {
+          //   const opened = openImageInNewTab(dataUrl);
+          //   if (!opened) {
+          //     try {
+          //       const blob = dataUrlToBlob(dataUrl);
+          //       const url = URL.createObjectURL(blob);
+          //       try { window.open(url, '_blank'); } catch (err) { /* ignore */ }
+          //       // revoke after a short delay
+          //       setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 10000);
+          //     } catch (err) {
+          //       console.error('Blob fallback failed:', err);
+          //     }
+          //   }
+          // }
         }
       } catch (err) {
         console.error('Failed to export canvas image:', err);
