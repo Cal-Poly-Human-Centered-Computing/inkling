@@ -5,9 +5,11 @@
 	import { code as codeStore } from '$lib/stores/code';
 	import {get} from "svelte/store";
 	import { EditorState } from '@codemirror/state';
-	import { EditorView } from '@codemirror/view';
+	import {EditorView, keymap} from '@codemirror/view';
 	import { json } from '@codemirror/lang-json';
 	import readOnlyRangesExtension from 'codemirror-readonly-ranges'
+	import {indentOnInput} from "@codemirror/language";
+	import {defaultKeymap, indentLess, indentMore} from "@codemirror/commands";
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -51,6 +53,11 @@
 					'.cm-content': { whiteSpace: 'pre' },
 					'.cm-gutters': { flex: '0 0 auto' }
 				}),
+				keymap.of([
+					{ key: 'Tab', run: indentMore },
+					{ key: 'Shift-Tab', run: indentLess },
+					...defaultKeymap
+				]),
 				EditorView.updateListener.of((v: any) => {
 					if (v.docChanged) {
 						const val = v.state.doc.toString();
