@@ -151,58 +151,6 @@
     if (canvasViewRef && typeof canvasViewRef.redo === 'function') canvasViewRef.redo();
   }
 
-  // handle dataset attachments coming from the CodeEditor dataset modal
-  async function handleAttachDataset(e: CustomEvent) {
-    const detail = e.detail || {};
-    if (detail.kind === 'url' && detail.url) {
-      console.log('Loading dataset via helper:', detail.url);
-      try {
-        const res = await loadDatasetFromUrlHelper(detail.url);
-        console.log('Dataset loaded via helper:', res);
-
-        // Persist the dataset: prefer full df persistence when available
-        if (res && res.df) {
-          try {
-            await setDatasetFromDfd(res.df, detail.url);
-            console.log('Persisted dataset to localStorage (from df)');
-          } catch (serr) {
-            console.warn('Failed to persist df, falling back to URL-only persist', serr);
-            setDatasetUrl(detail.url);
-          }
-        } else {
-          // No df to persist; persist the URL reference only
-          setDatasetUrl(detail.url);
-          console.log('Persisted dataset URL only');
-        }
-
-                // Immediately rehydrate from storage and log to confirm
-                // TODO: remove this later; just for debugging
-                // try {
-                //     const persistedRaw = readPersistedDataset();
-                //     console.log('Raw persisted payload:', persistedRaw);
-                //     const rehydrated = await getDfdFromStore();
-                //     console.log('Rehydrated DataFrame from storage:', rehydrated);
-                // } catch (rehErr) {
-                //     console.error('Failed to read/reconstruct persisted dataset', rehErr);
-                // }
-
-                // Optionally: forward to canvas or store; kept as a log for now
-            } catch (err) {
-                console.error('Failed to load dataset via helper:', err);
-            }
-        } else if (detail.kind === 'file') {
-            // file handling will be implemented later
-            console.log('Dataset file attached (not yet handled):', detail.file);
-        }
-    }
-
-    function handleDatasetLoaded(e: CustomEvent) {
-        console.log('Dataset loaded in CanvasView:', e.detail);
-    }
-
-    function handleDatasetError(e: CustomEvent) {
-        console.error('Dataset error in CanvasView:', e.detail);
-    }
 </script>
 
 <div class="container is-fluid" style="height:100vh; padding:1rem;">
@@ -210,7 +158,7 @@
     <div class="column is-half" style="display:flex; flex-direction:column; padding-right:0.5rem;">
       <!-- Code editor area -->
       <div style="flex:1 1 auto; min-height:0;">
-        <CodeEditor bind:this={codeEditorRef} on:upload={handleUpload} on:attachDataset={handleAttachDataset} />
+        <CodeEditor bind:this={codeEditorRef} on:upload={handleUpload} />
       </div>
 
       <!-- Chatbox pinned to bottom -->

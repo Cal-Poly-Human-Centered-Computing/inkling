@@ -8,8 +8,9 @@
 	import {EditorView, keymap} from '@codemirror/view';
 	import { json } from '@codemirror/lang-json';
 	import readOnlyRangesExtension from 'codemirror-readonly-ranges'
-	import {indentOnInput} from "@codemirror/language";
 	import {defaultKeymap, indentLess, indentMore} from "@codemirror/commands";
+	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
+	import {setDatasetFromDfd} from "$lib/utils/datasetStore";
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -65,7 +66,7 @@
 						codeStore.set(val);
 					}
 				}),
-				readOnlyRangesExtension(getReadOnlyRanges)
+				// readOnlyRangesExtension(getReadOnlyRanges)
 			]
 		});
 
@@ -296,7 +297,23 @@
 		else datasetFile = null;
 	}
 
-	function confirmDataset() {
+	export function replaceTopLevelDataValue(datasetUrl: string) {
+		const text = get(codeStore) || '';
+		const m = /"data"\s*:\s*/.exec(text);
+		if (!m) return text;
+
+		const valueStart = m.index + m[0].length;
+		const valueEnd = findValueEndIndex(text, valueStart);
+		if (valueEnd < valueStart) return text;
+
+		const newValue = `{
+	"url": ${JSON.stringify(datasetUrl)}
+  }`;
+		const finalString = text.slice(0, valueStart) + newValue + text.slice(valueEnd + 1)
+		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: finalString } });
+	}
+
+	async function attachDataset() {
 		// close any help popover when confirming
 		showDatasetHelp = false;
 		document.removeEventListener('mousedown', handleDocClick);
@@ -304,7 +321,35 @@
 			dispatch('attachDataset', { kind: 'file', file: datasetFile });
 			showDatasetModal = false;
 		} else if (datasetMode === 'url' && datasetUrl.trim()) {
-			dispatch('attachDataset', { kind: 'url', url: datasetUrl.trim() });
+			datasetUrl = datasetUrl.trim()
+			try {
+				const res = await loadDatasetFromUrlHelper(datasetUrl);
+				console.log('Dataset loaded via helper:', res);
+
+				await setDatasetFromDfd(res.df, datasetUrl);
+
+				replaceTopLevelDataValue(datasetUrl);
+
+				data = datasetUrl;
+
+
+
+
+				// Immediately rehydrate from storage and log to confirm
+				// TODO: remove this later; just for debugging
+				// try {
+				//     const persistedRaw = readPersistedDataset();
+				//     console.log('Raw persisted payload:', persistedRaw);
+				//     const rehydrated = await getDfdFromStore();
+				//     console.log('Rehydrated DataFrame from storage:', rehydrated);
+				// } catch (rehErr) {
+				//     console.error('Failed to read/reconstruct persisted dataset', rehErr);
+				// }
+
+				// Optionally: forward to canvas or store; kept as a log for now
+			} catch (err) {
+				console.error('Failed to load dataset via helper:', err);
+			}
 			showDatasetModal = false;
 		}
 	}
@@ -439,7 +484,7 @@
 				{/if}
 			</section>
 			<footer class="modal-card-foot">
-				<button class="button is-info" on:click={confirmDataset} disabled={(datasetMode === 'file' && !datasetFile) || (datasetMode === 'url' && !datasetUrl)}>Attach</button>&nbsp;
+				<button class="button is-info" on:click={attachDataset} disabled={(datasetMode === 'file' && !datasetFile) || (datasetMode === 'url' && !datasetUrl)}>Attach</button>&nbsp;
 				<button class="button" on:click={cancelDataset}>Cancel</button>
 			</footer>
 		</div>
