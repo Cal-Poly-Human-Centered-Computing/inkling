@@ -4,6 +4,10 @@
 	import { faUpload, faDatabase } from '@fortawesome/free-solid-svg-icons';
 	import { code as codeStore } from '$lib/stores/code';
 	import {get} from "svelte/store";
+	import { EditorState } from '@codemirror/state';
+	import { EditorView } from '@codemirror/view';
+	import { json } from '@codemirror/lang-json';
+	import readOnlyRangesExtension from 'codemirror-readonly-ranges'
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -35,14 +39,6 @@
 
 	onMount(async () => {
 		if (!editorContainer) return;
-		// Dynamic imports to avoid SSR issues
-		const stateModule: any = await import('@codemirror/state');
-		const viewModule: any = await import('@codemirror/view');
-		const jsonModule: any = await import('@codemirror/lang-json');
-
-		const { EditorState } = stateModule;
-		const { EditorView } = viewModule;
-		const { json } = jsonModule;
 
 		const state = EditorState.create({
 			doc: get(codeStore),
@@ -61,7 +57,8 @@
 						// Always let the editor listener be the single writer to the shared store
 						codeStore.set(val);
 					}
-				})
+				}),
+				readOnlyRangesExtension(getReadOnlyRanges)
 			]
 		});
 
@@ -78,6 +75,97 @@
 
 		editorMounted = true;
 	});
+
+	/**
+	 * Find the document index (0-based) where a value starting at `startIdx` ends.
+	 * Handles objects { ... }, arrays [ ... ], strings and simple primitives.
+	 */
+	function findValueEndIndex(text: string, startIdx: number): number {
+		let i = startIdx;
+		const len = text.length;
+		// skip initial whitespace
+		while (i < len && /\s/.test(text[i])) i++;
+		if (i >= len) return len - 1;
+
+		const open = text[i];
+		if (open === '{' || open === '[') {
+			// scan for matching closing bracket, handling nested and strings
+			const closing = open === '{' ? '}' : ']';
+			let depth = 0;
+			let inString = false;
+			let escaped = false;
+			for (; i < len; i++) {
+				const ch = text[i];
+				if (inString) {
+					if (escaped) escaped = false;
+					else if (ch === '\\') escaped = true;
+					else if (ch === '"') inString = false;
+					continue;
+				}
+				if (ch === '"') { inString = true; continue; }
+				if (ch === open) depth++;
+				else if (ch === closing) {
+					depth--;
+					if (depth === 0) return i; // return index of closing bracket
+				}
+			}
+			return len - 1;
+		} else if (open === '"') {
+			// string literal: find closing quote
+			i++;
+			let escaped = false;
+			for (; i < len; i++) {
+				const ch = text[i];
+				if (escaped) { escaped = false; continue; }
+				if (ch === '\\') { escaped = true; continue; }
+				if (ch === '"') return i;
+			}
+			return len - 1;
+		} else {
+			// primitive (number, true, false, null or unquoted token) - scan until comma or closing brace/bracket
+			for (; i < len; i++) {
+				const ch = text[i];
+				if (ch === ',' || ch === '}' || ch === ']' || ch === '\n') return i - 1;
+			}
+			return len - 1;
+		}
+	}
+
+	/**
+	 * Convenience helper that reads the shared `code` store and returns the
+	 * 1-based line number where the top-level `data` value ends. Falls back to 3.
+	 */
+	export function findDataEndLineInStore(): number {
+		try {
+			const text = get(codeStore) || '';
+			const m = /"data"\s*:\s*/g.exec(text);
+			if (!m || !m.index) return 3;
+			const idx = m.index + m[0].length;
+			const endIdx = findValueEndIndex(text, idx);
+			// compute line by counting newlines up to endIdx
+			const slice = text.slice(0, endIdx + 1);
+			const line = slice.split('\n').length;
+			return line;
+		} catch (err) {
+			return 3;
+		}
+	}
+
+	const getReadOnlyRanges = (targetState: any):Array<{from:number|undefined, to:number|undefined}> => {
+		// compute the end line for the top-level data value so we can protect the data block
+		let dataEndLine = findDataEndLineInStore()
+
+		return [
+			{
+				from: undefined, // same as: targetState.doc.line(0).from or 0
+				to: targetState.doc.line(dataEndLine).to
+			},
+			{
+				from: targetState.doc.line(targetState.doc.lines).from,
+				to: undefined // same as: targetState.doc.line(targetState.doc.lines).to
+			}
+		];
+	}
 
 	// Expose a method to let parents programmatically set the editor contents — treat it like a user edit
 	export async function setCode(newCode: string) {
