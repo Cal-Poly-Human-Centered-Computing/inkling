@@ -1,7 +1,7 @@
 <script lang="ts">
   import { CodeEditor, ChatBox, Toolbar, CanvasView } from '$lib/components';
   import { loadDatasetFromUrl as loadDatasetFromUrlHelper } from '$lib/utils/datasetLoader';
-  import { setDatasetFromDfd, setDatasetUrl } from '$lib/utils/datasetStore';
+  import {getColumnNames, setDatasetFromDfd, setDatasetUrl} from '$lib/utils/datasetStore';
   import { code as codeStore } from '$lib/stores/code';
 
   let selectedTool: 'pen' | 'textbox' | 'eraser' = 'pen';
@@ -87,7 +87,7 @@
         return;
       }
 
-      const bodyPayload: any = dataUrl ? { image: dataUrl } : {};
+      const bodyPayload: any = { image: dataUrl, columnNames: getColumnNames() };
 
       const resp = await fetch('/api/apply-changes', {
         method: 'POST',

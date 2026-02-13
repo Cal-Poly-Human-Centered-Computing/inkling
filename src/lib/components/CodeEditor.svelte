@@ -330,10 +330,7 @@
 
 				replaceTopLevelDataValue(datasetUrl);
 
-				data = datasetUrl;
-
-
-
+				data = { url: datasetUrl };
 
 				// Immediately rehydrate from storage and log to confirm
 				// TODO: remove this later; just for debugging

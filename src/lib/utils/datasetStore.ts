@@ -28,6 +28,16 @@ function readRaw(): PersistedDataset | null {
   }
 }
 
+export function getColumnNames(): string[] {
+    const payload = readRaw();
+    console.log(payload)
+    if (payload && payload.columns) {
+        return payload.columns;
+    } else {
+      return []
+    }
+}
+
 function writeRaw(payload: PersistedDataset | null) {
   if (!isBrowser()) return;
   try {

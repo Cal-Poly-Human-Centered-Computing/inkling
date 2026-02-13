@@ -14,6 +14,9 @@ export async function generateChanges(payload: any): Promise<string> {
   // Use a vision-capable model by default; allow override via env
   const model = OPENAI_MODEL ?? 'gpt-4.1';
 
+  const columnNames = payload.columnNames ?? [];
+  const columnNamesString = columnNames.join(', ');
+
   // Build the user prompt using the exact text provided by the user.
   const promptText = `Analyze the provided image. It is a sketch or image of a data visualization.
 Determine (but do not output) the following about the visualization:
@@ -25,7 +28,11 @@ Determine (but do not output) the following about the visualization:
 
 Using these MARKS, VISUAL ENCODINGS, LAYERS, AND TRANSFORMS, generate corresponding valid Vega-Lite specs to generate the given visualization.
 
-Respond with ONLY this Vega-Lite JSON specification.`;
+Respond with ONLY this Vega-Lite JSON specification.
+
+Match the fields/axis titles to the closest match in these column names:
+${columnNamesString}`;
+
 
   const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
 
