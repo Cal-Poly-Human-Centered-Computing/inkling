@@ -4,10 +4,9 @@
 	import { faUpload, faDatabase } from '@fortawesome/free-solid-svg-icons';
 	import { code as codeStore } from '$lib/stores/code';
 	import {get} from "svelte/store";
-	import { EditorState } from '@codemirror/state';
-	import {EditorView, keymap} from '@codemirror/view';
+	import { EditorState, StateEffect, StateField } from '@codemirror/state';
+	import {EditorView, keymap, Decoration, WidgetType, ViewPlugin} from '@codemirror/view';
 	import { json } from '@codemirror/lang-json';
-	import readOnlyRangesExtension from 'codemirror-readonly-ranges'
 	import {defaultKeymap, indentLess, indentMore} from "@codemirror/commands";
 	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
 	import {setDatasetFromDfd} from "$lib/utils/datasetStore";
@@ -40,11 +39,289 @@
 	const schema = "https://vega.github.io/schema/vega-lite/v5.json";
 	let data: any = null; // will be wired later when datasets are attached
 
+	// --- New Code: helpers, CM widgets, and header metadata StateField ---
+
+	// Effect to update header meta (schema + data) in editor state
+	const setHeaderMeta = StateEffect.define();
+
+	type HeaderMeta = { schema: string; data: any };
+
+	const headerMetaField: any = StateField.define({
+		create(): HeaderMeta | null {
+			// initialize from current codeStore value
+			try {
+				const text = get(codeStore) || '';
+				const parsed = JSON.parse(text || '{}');
+				return { schema: parsed?.['$schema'] ?? schema, data: parsed?.['data'] ?? data };
+			} catch (err) {
+				return { schema, data };
+			}
+		},
+		update(value: HeaderMeta | null, tr: any) {
+			for (const e of tr.effects) {
+				if (e.is(setHeaderMeta)) return e.value;
+			}
+			return value;
+		}
+	});
+
+	class HeaderWidget extends WidgetType {
+		_meta: { schema: string; data: any } | null;
+		constructor(meta: { schema: string; data: any } | null) {
+			super();
+			this._meta = meta;
+		}
+		toDOM() {
+			const el = document.createElement('div');
+			el.className = 'cm-editor-header';
+			el.style.pointerEvents = 'none';
+			el.style.whiteSpace = 'pre';
+			// render opening brace, schema and a compact data preview (no leading spaces; padding handled by CSS)
+			const schemaText = this._meta?.schema ? `"$schema": ${JSON.stringify(this._meta.schema)}` : '';
+			let dataPreview = '"data": null';
+			try {
+				if (this._meta?.data) {
+					if (typeof this._meta.data === 'string') dataPreview = `"data": ${JSON.stringify(this._meta.data)}`;
+					else dataPreview = `"data": ${JSON.stringify(this._meta.data, null, 2)}`;
+				}
+			} catch (e) {}
+			// Normalize any internal indentation so all header lines get a consistent prefix
+			function indentLines(s: string, prefix = '  ') {
+				if (!s) return '';
+				// compute depth at the start of each line by scanning the string once
+				const depths: number[] = [];
+				let depth = 0;
+				let inStr = false;
+				let quote = '';
+				let lineIdx = 0;
+				depths[0] = 0;
+				for (let i = 0; i < s.length; i++) {
+					const c = s[i];
+					if (inStr) {
+						if (c === '\\') { i++; continue; }
+						if (c === quote) { inStr = false; quote = ''; }
+					} else {
+						if (c === '"' || c === "'") { inStr = true; quote = c; }
+						else if (c === '{' || c === '[') { depth++; }
+						else if (c === '}' || c === ']') { depth = Math.max(0, depth - 1); }
+					}
+					if (c === '\n') { lineIdx++; depths[lineIdx] = depth; }
+				}
+
+				const lines = s.split('\n');
+				return lines.map((line, idx) => {
+					const rest = line.trimStart();
+					if (idx === 0) {
+						return prefix + rest;
+					}
+					const depthAtStart = depths[idx] ?? 0;
+					// if the line starts with a closing brace/bracket, it should be one level less indented
+					const firstChar = rest.charAt(0);
+					const effectiveDepth = (firstChar === '}' || firstChar === ']') ? Math.max(0, depthAtStart - 1) : depthAtStart;
+					const indent = prefix.repeat(1 + effectiveDepth);
+					return indent + rest;
+				}).join('\n');
+			}
+			const schemaBlock = schemaText ? indentLines(schemaText) : '';
+			const dataBlock = indentLines(dataPreview);
+			el.textContent = '{\n' + (schemaBlock ? schemaBlock + ',\n' : '') + dataBlock + ',';
+			return el;
+		}
+		ignoreEvent() { return true; }
+	}
+
+	class FooterWidget extends WidgetType {
+		constructor() { super(); }
+		toDOM() {
+			const el = document.createElement('div');
+			el.className = 'cm-editor-footer';
+			el.style.pointerEvents = 'none';
+			el.style.whiteSpace = 'pre';
+			el.textContent = '}';
+			return el;
+		}
+		ignoreEvent() { return true; }
+	}
+
+	const headerFooterPlugin = ViewPlugin.fromClass(class {
+		decorations: any;
+		constructor(view: any) { this.decorations = this.buildDeco(view); }
+		update(update: any) { if (update.docChanged || update.viewportChanged || update.startState.field(headerMetaField) !== update.state.field(headerMetaField)) this.decorations = this.buildDeco(update.view); }
+		buildDeco(view: any) {
+			const meta = view.state.field(headerMetaField);
+			const widgets: any[] = [];
+			widgets.push(Decoration.widget({ widget: new HeaderWidget(meta), side: -1 }).range(0));
+			widgets.push(Decoration.widget({ widget: new FooterWidget(), side: 1 }).range(view.state.doc.length));
+			return Decoration.set(widgets, true);
+		}
+	}, { decorations: (v: any) => v.decorations });
+
+	/**
+	 * Extract the "inner" spec portion from a full top-level JSON text.
+	 * If the top-level is an object, remove $schema and data keys and return
+	 * the pretty-printed remainder (or empty object "{}" if nothing left).
+	 * If parsing fails, try to return any _user_raw content, or fallback to '{}'.
+	 */
+	function extractInnerSpecFromFull(fullText: string): string {
+		try {
+			const parsed = JSON.parse(fullText || '{}');
+			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+				const rest: any = {};
+				for (const k of Object.keys(parsed)) {
+					if (k === '$schema' || k === 'data') continue;
+					rest[k] = parsed[k];
+				}
+				// if nothing left, return an empty object for the inner spec
+				if (Object.keys(rest).length === 0) return '{}';
+				return JSON.stringify(rest, null, 2);
+			}
+			// non-object top-level -> wrap under "spec"
+			return JSON.stringify({ spec: parsed }, null, 2);
+		} catch (err) {
+			// fallback: preserve _user_raw if present
+			try {
+				const loose = JSON.parse(fullText.replace(/^\s*/, ''));
+				if (loose && typeof loose === 'object' && loose._user_raw) return loose._user_raw;
+			} catch (e) {}
+			return '{}';
+		}
+	}
+
+	/**
+	 * Extract only the outer "$schema" and "data" values from an arbitrary
+	 * text blob that *may not* be valid JSON. This does not attempt to parse
+	 * the full text as JSON; instead it locates the keys and extracts the
+	 * following value token as a raw string (for objects/arrays the full
+	 * balanced text is returned, for quoted strings the inner string is
+	 * returned, for primitives the raw token is returned).
+	 *
+	 * Returns an object: { schema?: string, data?: string }
+	 */
+	function extractOuterSpecFromFull(fullText: string): { schema?: string; data?: string } {
+		const text = String(fullText || '');
+		const result: { schema?: string; data?: string } = {};
+
+		// Regex to find occurrences of the quoted keys (handles both single and double quotes)
+		const keyRegex = /["'](\$schema|data)["']\s*:/g;
+		let match: RegExpExecArray | null;
+
+		// Helper to advance from an index and extract a value token (string, object/array, or primitive)
+		function extractValueFromIndex(startIdx: number): { value: string; endIdx: number } {
+			let i = startIdx;
+			// skip whitespace
+			while (i < text.length && /\s/.test(text[i])) i++;
+			if (i >= text.length) return { value: '', endIdx: i };
+
+			const ch = text[i];
+
+			// Quoted string
+			if (ch === '"' || ch === "'") {
+				const quote = ch;
+				i++;
+				let out = '';
+				let escaped = false;
+				while (i < text.length) {
+					const c = text[i++];
+					if (escaped) {
+						out += c;
+						escaped = false;
+						continue;
+					}
+					if (c === '\\') {
+						escaped = true;
+						continue;
+					}
+					if (c === quote) break;
+					out += c;
+				}
+				return { value: out, endIdx: i };
+			}
+
+			// Object or array: parse balanced braces/brackets and skip strings inside
+			if (ch === '{' || ch === '[') {
+				const open = ch;
+				const close = open === '{' ? '}' : ']';
+				let depth = 0;
+				let start = i;
+				while (i < text.length) {
+					const c = text[i];
+					if (c === '"' || c === "'") {
+						// skip quoted strings safely
+						const quote = c;
+						i++;
+						while (i < text.length) {
+							const cc = text[i++];
+							if (cc === '\\') { i++; continue; }
+							if (cc === quote) break;
+						}
+						continue;
+					}
+					if (c === open) {
+						depth++;
+					} else if (c === close) {
+						depth--;
+						if (depth === 0) {
+							i++; // include the closing brace
+							break;
+						}
+					}
+					i++;
+				}
+				const slice = text.slice(start, i).trim();
+				return { value: slice, endIdx: i };
+			}
+
+			// Primitive (unquoted) - read until comma or closing brace/bracket
+			const primStart = i;
+			while (i < text.length && !/[,\}\]\n\r]/.test(text[i])) i++;
+			const prim = text.slice(primStart, i).trim();
+			return { value: prim.replace(/^,|,$/g, ''), endIdx: i };
+		}
+
+		while ((match = keyRegex.exec(text)) !== null) {
+			const key = match[1];
+			const colonIdx = match.index + match[0].length;
+			const { value } = extractValueFromIndex(colonIdx);
+			if (value !== undefined && value !== '') {
+				if (key === '$schema') result.schema = value;
+				else if (key === 'data') result.data = value;
+			} else {
+				// store empty string if present but empty
+				if (key === '$schema') result.schema = result.schema ?? '';
+				else if (key === 'data') result.data = result.data ?? '';
+			}
+		}
+
+		return result;
+	}
+
+	/**
+	 * Compose a full JSON text from the editor's inner spec text, injecting
+	 * the enforced $schema and current data value.
+	 */
+	function composeFullFromInner(innerText: string): string {
+		let finalObj: any = null;
+		try {
+			const parsedInner = JSON.parse(innerText);
+			if (parsedInner && typeof parsedInner === 'object' && !Array.isArray(parsedInner)) {
+				finalObj = { '$schema': schema, 'data': data, ...parsedInner };
+			} else {
+				finalObj = { '$schema': schema, 'data': data, 'spec': parsedInner };
+			}
+		} catch (err) {
+			// inner not valid JSON: preserve raw under _user_raw
+			finalObj = { '$schema': schema, 'data': data, '_user_raw': innerText };
+		}
+		try { return JSON.stringify(finalObj, null, 2); } catch (e) { return String(finalObj); }
+	}
+
+	// --- End new code ---
+
 	onMount(async () => {
 		if (!editorContainer) return;
 
 		const state = EditorState.create({
-			doc: get(codeStore),
+			doc: extractInnerSpecFromFull(get(codeStore)),
 			extensions: [
 				json(),
 				// Theme to make editor fill container and allow scrolling
@@ -59,14 +336,17 @@
 					{ key: 'Shift-Tab', run: indentLess },
 					...defaultKeymap
 				]),
+				// write full JSON back to the shared store whenever inner doc changes
 				EditorView.updateListener.of((v: any) => {
 					if (v.docChanged) {
-						const val = v.state.doc.toString();
-						// Always let the editor listener be the single writer to the shared store
-						codeStore.set(val);
+						const inner = v.state.doc.toString();
+						const full = composeFullFromInner(inner);
+						// single writer: editor listener updates the shared store
+						codeStore.set(full);
 					}
 				}),
-				// readOnlyRangesExtension(getReadOnlyRanges)
+				headerMetaField,
+				headerFooterPlugin
 			]
 		});
 
@@ -84,104 +364,10 @@
 		editorMounted = true;
 	});
 
-	/**
-	 * Find the document index (0-based) where a value starting at `startIdx` ends.
-	 * Handles objects { ... }, arrays [ ... ], strings and simple primitives.
-	 */
-	function findValueEndIndex(text: string, startIdx: number): number {
-		let i = startIdx;
-		const len = text.length;
-		// skip initial whitespace
-		while (i < len && /\s/.test(text[i])) i++;
-		if (i >= len) return len - 1;
-
-		const open = text[i];
-		if (open === '{' || open === '[') {
-			// scan for matching closing bracket, handling nested and strings
-			const closing = open === '{' ? '}' : ']';
-			let depth = 0;
-			let inString = false;
-			let escaped = false;
-			for (; i < len; i++) {
-				const ch = text[i];
-				if (inString) {
-					if (escaped) escaped = false;
-					else if (ch === '\\') escaped = true;
-					else if (ch === '"') inString = false;
-					continue;
-				}
-				if (ch === '"') { inString = true; continue; }
-				if (ch === open) depth++;
-				else if (ch === closing) {
-					depth--;
-					if (depth === 0) return i; // return index of closing bracket
-				}
-			}
-			return len - 1;
-		} else if (open === '"') {
-			// string literal: find closing quote
-			i++;
-			let escaped = false;
-			for (; i < len; i++) {
-				const ch = text[i];
-				if (escaped) { escaped = false; continue; }
-				if (ch === '\\') { escaped = true; continue; }
-				if (ch === '"') return i;
-			}
-			return len - 1;
-		} else {
-			// primitive (number, true, false, null or unquoted token) - scan until comma or closing brace/bracket
-			for (; i < len; i++) {
-				const ch = text[i];
-				if (ch === ',' || ch === '}' || ch === ']' || ch === '\n') return i - 1;
-			}
-			return len - 1;
-		}
-	}
-
-	/**
-	 * Convenience helper that reads the shared `code` store and returns the
-	 * 1-based line number where the top-level `data` value ends. Falls back to 3.
-	 */
-	export function findDataEndLineInStore(): number {
-		try {
-			const text = get(codeStore) || '';
-			const m = /"data"\s*:\s*/g.exec(text);
-			if (!m || !m.index) return 3;
-			const idx = m.index + m[0].length;
-			const endIdx = findValueEndIndex(text, idx);
-			// compute line by counting newlines up to endIdx
-			const slice = text.slice(0, endIdx + 1);
-			const line = slice.split('\n').length;
-			return line;
-		} catch (err) {
-			return 3;
-		}
-	}
-
-	const getReadOnlyRanges = (targetState: any):Array<{from:number|undefined, to:number|undefined}> => {
-		// compute the end line for the top-level data value so we can protect the data block
-		let dataEndLine = findDataEndLineInStore()
-
-		return [
-			{
-				from: undefined, // same as: targetState.doc.line(0).from or 0
-				to: targetState.doc.line(dataEndLine).to
-			},
-			{
-				from: targetState.doc.line(targetState.doc.lines).from,
-				to: undefined // same as: targetState.doc.line(targetState.doc.lines).to
-			}
-		];
-	}
-
 	// Expose a method to let parents programmatically set the editor contents — treat it like a user edit
 	export async function setCode(newCode: string) {
-		// We implement Option B (tolerant) fallback: try to parse incoming text as JSON.
-		// If parsing succeeds and top-level is an object, create a new object with "$schema" and "data" first
-		// and then copy the remaining keys in their original order. If parsing succeeds but top-level is not an object,
-		// wrap it under "spec" while still enforcing schema/data. If parsing fails, create a wrapper object that
-		// preserves the raw string under _user_raw and enforces schema/data.
+		// Build final full JSON string using the same tolerant approach as before,
+		// but then update the editor's inner doc (not the wrapper) and header meta.
 
 		let finalObj: any = null;
 		let finalString = '';
@@ -189,50 +375,38 @@
 		try {
 			const parsed = JSON.parse(newCode);
 			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-				// top-level object: build a new object where $schema and data are first
 				const rest: any = {};
 				for (const k of Object.keys(parsed)) {
-					if (k === '$schema' || k === 'data') continue; // skip these so we can place ours first
+					if (k === '$schema' || k === 'data') continue;
 					rest[k] = parsed[k];
 				}
 				finalObj = { '$schema': schema, 'data': data, ...rest };
 			} else {
-				// not an object (array/primitive): wrap under `spec`, maintaining order
 				finalObj = { '$schema': schema, 'data': data, 'spec': parsed };
 			}
 		} catch (err) {
-			// parsing failed: preserve raw input under `_user_raw` so the user content isn't lost
-			console.warn('setCode: incoming code not valid JSON; using tolerant fallback and preserving raw content.');
 			finalObj = { '$schema': schema, 'data': data, '_user_raw': newCode };
 		}
 
-		try {
-			finalString = JSON.stringify(finalObj, null, 2);
-		} catch (err) {
-			// unlikely, but ensure we still have a string to insert
-			finalString = String(finalObj);
-		}
+		try { finalString = JSON.stringify(finalObj, null, 2); } catch (err) { finalString = String(finalObj); }
 
+		// Update the shared store and editor inner doc
 		if (editorMounted && editorView) {
-			try {
-				// Programmatic replace: don't write the store here. The updateListener will observe the
-				// change and write to the store exactly once, same as a user edit.
-				editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: finalString } });
-				if (textareaFallback) textareaFallback.value = finalString;
-				// wait a tick so the editor and update listener run
-				await tick();
-				dispatch('codeApplied');
-			} catch (err) {
-				// fallback: if dispatch fails, write store directly
-				codeStore.set(finalString);
-				dispatch('codeApplied');
-			}
+			// compute inner spec and dispatch to replace editor content
+			const inner = extractInnerSpecFromFull(finalString);
+			editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: inner }, effects: setHeaderMeta.of({ schema, data }) });
+			if (textareaFallback) textareaFallback.value = inner;
+			await tick();
+			dispatch('codeApplied');
 		} else {
-			// editor not ready; set store directly and dispatch
 			codeStore.set(finalString);
 			dispatch('codeApplied');
 		}
 	}
+
+	// Prevent some static analyzers from flagging `setCode` as an unused export
+	// (the function is called via the component instance from the parent).
+	void setCode;
 
 	// on fallback textarea input, write to store directly
 	let fallbackValue = get(codeStore) || '';
@@ -297,20 +471,37 @@
 		else datasetFile = null;
 	}
 
+	/**
+	 * Replace only the top-level `data` value in the stored full JSON.
+	 * The editor contains only the inner spec, so we update
+	 * the shared `codeStore` and the header meta (which updates the widget)
+	 * without forcing edits to the inner editor content.
+	 */
 	export function replaceTopLevelDataValue(datasetUrl: string) {
 		const text = get(codeStore) || '';
-		const m = /"data"\s*:\s*/.exec(text);
-		if (!m) return text;
-
-		const valueStart = m.index + m[0].length;
-		const valueEnd = findValueEndIndex(text, valueStart);
-		if (valueEnd < valueStart) return text;
-
-		const newValue = `{
-	"url": ${JSON.stringify(datasetUrl)}
-  }`;
-		const finalString = text.slice(0, valueStart) + newValue + text.slice(valueEnd + 1)
-		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: finalString } });
+		try {
+			const parsed = JSON.parse(text || '{}');
+			if (parsed && typeof parsed === 'object') {
+				parsed['data'] = { url: datasetUrl };
+				const finalString = JSON.stringify(parsed, null, 2);
+				// update shared store
+				codeStore.set(finalString);
+				// update header meta so widgets re-render
+				if (editorView) editorView.dispatch({ effects: setHeaderMeta.of({ schema, data: { url: datasetUrl } }) });
+				// also update local data
+				data = { url: datasetUrl };
+				return finalString;
+			}
+		} catch (err) {
+			// fallback: reconstruct from current inner
+			const inner = editorView ? editorView.state.doc.toString() : extractInnerSpecFromFull(text);
+			const final = composeFullFromInner(inner);
+			codeStore.set(final);
+			if (editorView) editorView.dispatch({ effects: setHeaderMeta.of({ schema, data: { url: datasetUrl } }) });
+			data = { url: datasetUrl };
+			return final;
+		}
+		return text;
 	}
 
 	async function attachDataset() {
@@ -328,20 +519,10 @@
 
 				await setDatasetFromDfd(res.df, datasetUrl);
 
+				// update header meta and shared store without changing inner editor content
 				replaceTopLevelDataValue(datasetUrl);
 
 				data = { url: datasetUrl };
-
-				// Immediately rehydrate from storage and log to confirm
-				// TODO: remove this later; just for debugging
-				// try {
-				//     const persistedRaw = readPersistedDataset();
-				//     console.log('Raw persisted payload:', persistedRaw);
-				//     const rehydrated = await getDfdFromStore();
-				//     console.log('Rehydrated DataFrame from storage:', rehydrated);
-				// } catch (rehErr) {
-				//     console.error('Failed to read/reconstruct persisted dataset', rehErr);
-				// }
 
 				// Optionally: forward to canvas or store; kept as a log for now
 			} catch (err) {
@@ -583,4 +764,26 @@
 		color: #eaeaea;
 	}
   }
+
+  /* Header/footer widget styles */
+  :global(.cm-editor-header) {
+	  background: rgba(0,0,0,0.03);
+	  color: inherit;
+	  border-bottom: 1px solid rgba(0,0,0,0.06);
+	  font-family: monospace; /* use monospace to match editor */
+	  pointer-events: none;
+	  padding: 0.25rem 0 0.25rem 0.5rem; /* left padding aligns the inner content */
+	  white-space: pre;
+  }
+  :global(.cm-editor-footer) {
+	  background: rgba(0,0,0,0.03);
+	  color: inherit;
+	  border-top: 1px solid rgba(0,0,0,0.04);
+	  font-family: monospace; /* use monospace to match editor */
+	  pointer-events: none;
+	  padding: 0.25rem 0 0.25rem 0.5rem; /* match header padding */
+	  white-space: pre;
+  }
 </style>
+
+
