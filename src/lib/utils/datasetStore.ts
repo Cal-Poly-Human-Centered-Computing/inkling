@@ -2,6 +2,14 @@
 // This module intentionally does not modify other files; it depends on the existing
 // `datasetLoader` serializer where helpful but is otherwise self-contained.
 
+export function getDataToken(): any {
+  const dataset = readRaw()
+  if (!dataset) return null;
+
+  // TODO: eventually, also account for if a csv was uploaded
+  return dataset?.url ? { url: dataset.url } : null;
+}
+
 export type PersistedDataset = {
   url?: string;
   columns?: string[];
