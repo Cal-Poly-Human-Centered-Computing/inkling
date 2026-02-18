@@ -68,6 +68,9 @@
 			const el = document.createElement('div');
 			el.className = 'cm-editor-header';
 			el.style.pointerEvents = 'none';
+
+			const span = document.createElement('span');
+			span.className = 'cm-editor-header-text';
 			// render opening brace, schema and a compact data preview (no leading spaces; padding handled by CSS)
 			const schemaText = this._meta?.schema ? `"$schema": ${JSON.stringify(this._meta.schema)}` : '';
 			let dataPreview = '"data": null';
@@ -80,11 +83,14 @@
 
 			const schemaBlock = schemaText ? indentLines(schemaText) : '';
 			const dataBlock = indentLines(dataPreview);
-			el.textContent = '{\n' + (schemaBlock ? schemaBlock + ',\n' : '') + dataBlock + ',';
+			span.textContent = '{\n' + (schemaBlock ? schemaBlock + ',\n' : '') + dataBlock + ',';
+
+			el.appendChild(span);
 			return el;
 		}
 		ignoreEvent() { return true; }
 	}
+
 
 	class FooterWidget extends WidgetType {
 		constructor() { super(); }
@@ -779,9 +785,6 @@ ${indentedInner}
   /* Header/footer widget styles */
   :global(.cm-editor-header) {
 	  display: block;
-	  width: 100%;
-	  background: rgba(40, 40, 40, 0.7);
-	  border-radius: 6px;
 
 	  font-family: monospace;
 	  white-space: pre;
@@ -792,12 +795,22 @@ ${indentedInner}
 	  overflow: hidden;
   }
 
+  :global(.cm-editor-header-text) {
+	  display: inline; /* allow fragmentation across lines */
+	  white-space: pre; /* preserve newlines */
+	  background: rgba(70,70,70,0.8);
+	  border-radius: 4px;
+	  -webkit-box-decoration-break: clone;
+	  box-decoration-break: clone;
+	  background-clip: padding-box;
+  }
+
   :global(.cm-editor-footer) {
 	  display: block;
 	  width: fit-content;
 	  max-width: 100%;
-	  background: rgba(40, 40, 40, 0.7);
-	  border-radius: 6px;
+	  background: rgba(70,70,70,0.8);
+	  border-radius: 4px;
 
 	  font-family: monospace;
 	  white-space: pre;
