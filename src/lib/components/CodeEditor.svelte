@@ -778,20 +778,34 @@ ${indentedInner}
 
   /* Header/footer widget styles */
   :global(.cm-editor-header) {
-	  background: rgba(0,0,0,0.03);
-	  color: inherit;
-	  border-bottom: 1px solid rgba(0,0,0,0.06);
-	  font-family: monospace; /* use monospace to match editor */
-	  pointer-events: none;
+	  display: block;
+	  width: 100%;
+	  background: rgba(40, 40, 40, 0.7);
+	  border-radius: 6px;
+
+	  font-family: monospace;
 	  white-space: pre;
+	  pointer-events: none;
+	  color: inherit;
+
+	  box-sizing: border-box;
+	  overflow: hidden;
   }
+
   :global(.cm-editor-footer) {
-	  background: rgba(0,0,0,0.03);
-	  color: inherit;
-	  border-top: 1px solid rgba(0,0,0,0.04);
-	  font-family: monospace; /* use monospace to match editor */
-	  pointer-events: none;
+	  display: block;
+	  width: fit-content;
+	  max-width: 100%;
+	  background: rgba(40, 40, 40, 0.7);
+	  border-radius: 6px;
+
+	  font-family: monospace;
 	  white-space: pre;
+	  pointer-events: none;
+	  color: inherit;
+
+	  box-sizing: border-box;
+	  overflow: hidden;
   }
 </style>
 
