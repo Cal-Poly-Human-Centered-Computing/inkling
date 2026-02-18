@@ -5,18 +5,11 @@
 	import {faMousePointer} from "@fortawesome/free-solid-svg-icons/faMousePointer";
 	import {faRotateLeft} from "@fortawesome/free-solid-svg-icons/faRotateLeft";
 	const dispatch = createEventDispatcher();
-	export let selected: 'pen' | 'textbox' | 'eraser' = 'pen';
-	let active: 'pen' | 'textbox' | 'eraser'| 'selector' = selected;
-
-	$: if (selected && selected !== active) active = selected;
+	export let selected: 'pen' | 'textbox' | 'eraser' | 'selector' = 'pen';
 
 	function select(t: 'pen' | 'textbox' | 'eraser' | 'selector') {
-		active = t;
+		selected = t;
 		dispatch('selectTool', t);
-	}
-
-	function applyChanges() {
-		dispatch('applyChanges');
 	}
 
 	function undo() {
@@ -29,7 +22,7 @@
 </script>
 
 <!-- Container uses flex with center alignment so all buttons line up vertically -->
-<div class="toolbar" style="display:flex; align-items:center; justify-content:space-between; padding:0.5rem;">
+<div class="toolbar" style="display:flex; align-items:center; justify-content:space-between; padding:0.5rem; width: 100%">
 	<!-- Undo/Redo buttons on the left -->
 	<div style="display:flex; align-items:center; gap:0.5rem;">
 		<div class="buttons" role="toolbar" aria-label="Drawing tools" style="display:flex; align-items:center; gap:0.5rem;">
@@ -49,42 +42,27 @@
 	<!-- Main tool buttons -->
 	<div style="display:flex; align-items:center; gap:0.5rem;">
 		<div class="buttons" role="toolbar" aria-label="Drawing tools" style="display:flex; align-items:center; gap:0.5rem;">
-			<button class="button toolbar-button" on:click={() => select('selector')} aria-label="Selector tool" aria-pressed={active === 'selector'} class:has-text-weight-bold={active === 'selector'} class:tool-active={active === 'selector'}>
+			<button class="button toolbar-button" on:click={() => select('selector')} aria-label="Selector tool" aria-pressed={selected === 'selector'} class:has-text-weight-bold={selected === 'selector'} class:tool-active={selected === 'selector'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faMousePointer} />
 				</span>
 			</button>
-			<button class="button toolbar-button" on:click={() => select('pen')} aria-label="Pen tool" aria-pressed={active === 'pen'} class:has-text-weight-bold={active === 'pen'} class:tool-active={active === 'pen'}>
+			<button class="button toolbar-button" on:click={() => select('pen')} aria-label="Pen tool" aria-pressed={selected === 'pen'} class:has-text-weight-bold={selected === 'pen'} class:tool-active={selected === 'pen'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faPen} />
 				</span>
 			</button>
-			<button class="button toolbar-button" on:click={() => select('textbox')} aria-label="Textbox tool" aria-pressed={active === 'textbox'} class:has-text-weight-bold={active === 'textbox'} class:tool-active={active === 'textbox'}>
+			<button class="button toolbar-button" on:click={() => select('textbox')} aria-label="Textbox tool" aria-pressed={selected === 'textbox'} class:has-text-weight-bold={selected === 'textbox'} class:tool-active={selected === 'textbox'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faFont} />
 				</span>
 			</button>
-			<button class="button toolbar-button" on:click={() => select('eraser')} aria-label="Eraser tool" aria-pressed={active === 'eraser'} class:has-text-weight-bold={active === 'eraser'} class:tool-active={active === 'eraser'}>
+			<button class="button toolbar-button" on:click={() => select('eraser')} aria-label="Eraser tool" aria-pressed={selected === 'eraser'} class:has-text-weight-bold={selected === 'eraser'} class:tool-active={selected === 'eraser'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faEraser} />
 				</span>
 			</button>
 		</div>
-	</div>
-
-	<div>
-		<button class="button is-warning toolbar-button" aria-label="Rollback">
-			<span class="icon toolbar-icon">
-				<Fa icon={faRotateLeft} />
-			</span>
-			<span>Rollback</span>
-		</button>
-		<button class="button is-info toolbar-button" aria-label="Apply changes" on:click={applyChanges}>
-			<span class="icon toolbar-icon">
-				<Fa icon={faSync} />
-			</span>
-			<span>Apply Changes</span>
-		</button>
 	</div>
 </div>
 

@@ -2,9 +2,10 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { writable } from 'svelte/store';
 	import { code } from "$lib/stores/code";
+	import {CanvasToolbar, VersionControlToolbar} from "$lib/components/index";
 
 	// removed exported `spec` prop — CanvasView now reads the `code` store directly via `$code`
-	export let selectedTool: 'pen' | 'textbox' | 'eraser' | 'selector' = 'pen';
+	let selectedTool: 'selector' | 'pen' | 'textbox' | 'eraser' = 'pen';
 
 	let containerEl: HTMLDivElement | null = null;
 	let contentEl: HTMLDivElement | null = null;
@@ -1003,6 +1004,9 @@
 		}
 	}
 
+	function handleSelectTool(e: CustomEvent) {
+		selectedTool = e.detail;
+	}
 
 </script>
 
@@ -1030,6 +1034,10 @@
 				<p class="has-text-grey">Vega-Lite visualization preview will render here.</p>
 			{/if}
 		</div>
+	</div>
+
+	<div style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 20px; z-index:10000;">
+		<CanvasToolbar selected={selectedTool} on:selectTool={handleSelectTool} on:undo={undo} on:redo={redo} />
 	</div>
 
 	<!-- Replace canvas with an SVG overlay that renders strokes and texts as DOM elements -->

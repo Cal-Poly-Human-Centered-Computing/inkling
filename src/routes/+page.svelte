@@ -1,10 +1,9 @@
 <script lang="ts">
-  import { CodeEditor, ChatBox, Toolbar, CanvasView } from '$lib/components';
+  import { CodeEditor, ChatBox, VersionControlToolbar, CanvasView } from '$lib/components';
   import { loadDatasetFromUrl as loadDatasetFromUrlHelper } from '$lib/utils/datasetLoader';
   import {getColumnNames, setDatasetFromDfd, setDatasetUrl} from '$lib/utils/datasetStore';
   import { code as codeStore } from '$lib/stores/code';
 
-  let selectedTool: 'pen' | 'textbox' | 'eraser' = 'pen';
   let uploadedFile: File | null = null;
   let canvasViewRef: any = null;
   let codeEditorRef: any = null;
@@ -17,11 +16,6 @@
 
   function handleSend(e: CustomEvent) {
     console.log('Chat message sent:', e.detail);
-  }
-
-  function handleSelectTool(e: CustomEvent) {
-    selectedTool = e.detail;
-    console.log('Selected tool:', selectedTool);
   }
 
   // helper: convert data URL (data:<mime>;base64,...) to a Blob
@@ -143,14 +137,6 @@
     }
   }
 
-  function handleUndo() {
-    if (canvasViewRef && typeof canvasViewRef.undo === 'function') canvasViewRef.undo();
-  }
-
-  function handleRedo() {
-    if (canvasViewRef && typeof canvasViewRef.redo === 'function') canvasViewRef.redo();
-  }
-
 </script>
 
 <div class="container is-fluid" style="height:100vh; padding:1rem;">
@@ -168,14 +154,14 @@
     </div>
 
     <div class="column is-half" style="display:flex; flex-direction:column; padding-left:0.5rem;">
-      <!-- Toolbar -->
+      <!-- VersionControlToolbar -->
       <div style="flex:0 0 auto;">
-        <Toolbar selected={selectedTool} on:selectTool={handleSelectTool} on:applyChanges={handleApplyChanges} on:undo={handleUndo} on:redo={handleRedo} />
+        <VersionControlToolbar on:applyChanges={handleApplyChanges} />
       </div>
 
       <!-- Canvas / visualization area -->
       <div style="flex:1 1 auto; min-height:0;">
-        <CanvasView bind:this={canvasViewRef} selectedTool={selectedTool} />
+        <CanvasView bind:this={canvasViewRef} />
       </div>
     </div>
   </div>
