@@ -3,6 +3,7 @@
 	import {faUndo, faRedo, faPen, faFont, faEraser, faSync} from '@fortawesome/free-solid-svg-icons';
 	import { createEventDispatcher } from 'svelte';
 	import {faMousePointer} from "@fortawesome/free-solid-svg-icons/faMousePointer";
+	import {faRotateLeft} from "@fortawesome/free-solid-svg-icons/faRotateLeft";
 	const dispatch = createEventDispatcher();
 	export let selected: 'pen' | 'textbox' | 'eraser' = 'pen';
 	let active: 'pen' | 'textbox' | 'eraser'| 'selector' = selected;
@@ -72,6 +73,12 @@
 	</div>
 
 	<div>
+		<button class="button is-warning toolbar-button" aria-label="Rollback">
+			<span class="icon toolbar-icon">
+				<Fa icon={faRotateLeft} />
+			</span>
+			<span>Rollback</span>
+		</button>
 		<button class="button is-info toolbar-button" aria-label="Apply changes" on:click={applyChanges}>
 			<span class="icon toolbar-icon">
 				<Fa icon={faSync} />
