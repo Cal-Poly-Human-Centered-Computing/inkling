@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CodeEditor, ChatBox, VersionControlToolbar, CanvasView } from '$lib/components';
+  import {CodeEditor, ChatBox, VersionControlToolbar, CanvasView} from '$lib/components';
   import { loadDatasetFromUrl as loadDatasetFromUrlHelper } from '$lib/utils/datasetLoader';
   import {getColumnNames, setDatasetFromDfd, setDatasetUrl} from '$lib/utils/datasetStore';
   import { code as codeStore } from '$lib/stores/code';
@@ -8,6 +8,7 @@
   let canvasViewRef: any = null;
   let codeEditorRef: any = null;
   let applying = false;
+  let showRollbackConfirmationModal = false;
 
   function handleUpload(e: CustomEvent) {
     uploadedFile = e.detail;
@@ -119,9 +120,7 @@
         try {
           // wait a tick for Svelte/Vega to pick up the new spec and render
           await new Promise((resolve) => setTimeout(resolve, 100));
-          if (canvasViewRef && typeof canvasViewRef.clearOverlays === 'function') {
-            canvasViewRef.clearOverlays();
-          }
+          canvasViewRef.applyChanges();
         } catch (err) {
           console.warn('Failed to clear canvas overlays after applying changes', err);
         }
@@ -135,6 +134,21 @@
     } finally {
       applying = false;
     }
+  }
+
+
+  function handleRollbackChanges() {
+    showRollbackConfirmationModal = true;
+  }
+
+  function cancelRollback() {
+    showRollbackConfirmationModal = false;
+  }
+
+  function handleConfirmRollback() {
+    showRollbackConfirmationModal = false;
+    codeEditorRef.rollbackChanges()
+    canvasViewRef.rollbackChanges()
   }
 
 </script>
@@ -156,7 +170,7 @@
     <div class="column is-half" style="display:flex; flex-direction:column; padding-left:0.5rem;">
       <!-- VersionControlToolbar -->
       <div style="flex:0 0 auto;">
-        <VersionControlToolbar on:applyChanges={handleApplyChanges} />
+        <VersionControlToolbar on:applyChanges={handleApplyChanges} on:rollbackChanges={handleRollbackChanges} />
       </div>
 
       <!-- Canvas / visualization area -->
@@ -166,6 +180,23 @@
     </div>
   </div>
 </div>
+
+<!--Rollback confirmation modal-->
+{#if showRollbackConfirmationModal}
+  <div class="modal is-active" role="dialog" aria-modal="true" aria-label="Confirm rollback dialog">
+    <div class="modal-background" role="button" tabindex="0" aria-label="Close rollback dialog" on:click={cancelRollback} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelRollback(); }}></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Undo changes applied to canvas and code?</p>
+      </header>
+      <footer class="modal-card-foot" style="justify-content: end;">
+        <button class="button" on:click={cancelRollback}>Cancel</button>&nbsp;
+        <button class="button is-info" on:click={handleConfirmRollback} >Yes</button>&nbsp;
+      </footer>
+    </div>
+  </div>
+{/if}
+
 
 <style>
   :global(html, body) {

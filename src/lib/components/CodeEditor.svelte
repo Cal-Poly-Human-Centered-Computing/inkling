@@ -39,7 +39,7 @@
 	const schema = "https://vega.github.io/schema/vega-lite/v5.json";
 	let data: any = null;
 
-	// --- New Code: helpers, CM widgets, and header metadata StateField ---
+	let innerSpecBeforeAppliedChanges: string = ''
 
 	// Effect to update header meta (schema + data) in editor state
 	const setHeaderMeta = StateEffect.define();
@@ -395,8 +395,16 @@ ${indentedInner}
 		editorMounted = true;
 	});
 
-	// Expose a method to let parents programmatically set the editor contents — treat it like a user edit
+	/**
+	 * Called from page.svelte whenever the user applies changes from the canvas
+	 * newCode is the full JSON text with $schema and data (not just the inner spec) returned by the AI server
+	 * @param newCode
+	 */
 	export async function setCode(newCode: string) {
+		// save the current spec in case the user rolls back the applied changes
+		innerSpecBeforeAppliedChanges = editorView.state.doc.toString();
+
+
 		// Build final full JSON string using the same tolerant approach as before,
 		// but then update the editor's inner doc (not the wrapper) and header meta.
 
@@ -404,6 +412,7 @@ ${indentedInner}
 		let finalString = '';
 
 		try {
+			// TODO: first attempt to parse newCode as JSON somewhere else, to guarantee that it is JSON when it gets here
 			const parsed = JSON.parse(newCode);
 			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
 				const rest: any = {};
@@ -435,9 +444,12 @@ ${indentedInner}
 		}
 	}
 
-	// Prevent some static analyzers from flagging `setCode` as an unused export
-	// (the function is called via the component instance from the parent).
-	void setCode;
+
+	export async function rollbackChanges() {
+		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: innerSpecBeforeAppliedChanges }, effects: setHeaderMeta.of({ schema, data }) });
+		innerSpecBeforeAppliedChanges = '';
+	}
+
 
 	// on fallback textarea input, write to store directly
 	let fallbackValue = get(codeStore) || '';

@@ -9,12 +9,16 @@
 		dispatch('applyChanges');
 	}
 
+	function rollbackChanges() {
+		dispatch('rollbackChanges');
+	}
+
 </script>
 
 <!-- Container uses flex with center alignment so all buttons line up vertically -->
 <div class="toolbar" style="display:flex; align-items:center; justify-content:end; padding:0.5rem;">
 	<div>
-		<button class="button is-warning toolbar-button" aria-label="Rollback">
+		<button class="button is-warning toolbar-button" aria-label="Rollback" on:click={rollbackChanges}>
 			<span class="icon toolbar-icon">
 				<Fa icon={faRotateLeft} />
 			</span>

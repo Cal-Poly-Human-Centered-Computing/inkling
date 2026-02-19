@@ -117,8 +117,10 @@
 	let resizeSide: 'left'|'right'|'top'|'bottom' | null = null;
 	let resizeStartRect: DOMRect | null = null;
 
-	// history for undo/redo
-	let history: Array<string> = [];
+	// track each series of edits before/between changes applied
+	let historyStacks: Array<Array<string>> = [];
+	let currentHistoryStack: Array<string> = [];
+	// track where we are in currentHistoryStack
 	let historyIndex = -1;
 
 	let isDrawing = false;
@@ -185,21 +187,21 @@
 		texts.subscribe(v => t = v)();
 		const snap = JSON.stringify({ strokes: s, texts: t });
 		// trim future redo history
-		history = history.slice(0, historyIndex + 1);
-		history.push(snap);
-		historyIndex = history.length - 1;
+		currentHistoryStack = currentHistoryStack.slice(0, historyIndex + 1);
+		currentHistoryStack.push(snap);
+		historyIndex = currentHistoryStack.length - 1;
 	}
 
 	export function undo() {
 		if (historyIndex <= 0) return;
 		historyIndex--;
-		restore(history[historyIndex]);
+		restore(currentHistoryStack[historyIndex]);
 	}
 
 	export function redo() {
-		if (historyIndex >= history.length - 1) return;
+		if (historyIndex >= currentHistoryStack.length - 1) return;
 		historyIndex++;
-		restore(history[historyIndex]);
+		restore(currentHistoryStack[historyIndex]);
 	}
 
 	function restore(snapStr: string) {
@@ -207,8 +209,6 @@
 			const obj = JSON.parse(snapStr);
 			strokes.set(obj.strokes || []);
 			texts.set(obj.texts || []);
-			// drawAll is now DOM-driven; keep for compatibility as noop
-			drawAll();
 		} catch (err) {
 			console.warn('failed to restore snapshot', err);
 		}
@@ -291,8 +291,6 @@
 			return true; // keep
 		}));
 		if (removed) snapshot();
-		// drawAll is DOM-driven
-		drawAll();
 	}
 
 	function ensureCanvasReady() {
@@ -438,12 +436,8 @@
 		}
 	}
 
-	function clearCanvas() {
-		// noop for SVG-driven rendering; kept for API/backwards compatibility
-	}
-
 	// Exported helper: clear all overlays (strokes and texts) and snapshot the cleared state
-	export function clearOverlays() {
+	function clearOverlays() {
 		try {
 			// If a textarea is being edited, blur/finish it first
 			try { if (textareaRef) textareaRef.blur(); } catch (_) {}
@@ -453,17 +447,29 @@
 			texts.set([]);
 			// Record this change so it can be undone
 			snapshot();
-			// Update DOM (drawAll is a noop for SVG-driven rendering, but call for compatibility)
-			drawAll();
 		} catch (err) {
 			console.warn('clearOverlays failed', err);
 		}
 	}
 
+	export function applyChanges() {
+		historyStacks.push(currentHistoryStack)
+		// start a new stack working off of this state
+		currentHistoryStack = [];
+		historyIndex = -1
+		clearOverlays();
+	}
+
+	export function rollbackChanges() {
+		let restoredHistoryStack = historyStacks.pop() ?? [];
+		let lastIndexBeforeChangesApplied = restoredHistoryStack.length - 1;
+		restore(restoredHistoryStack[lastIndexBeforeChangesApplied]);
+		historyIndex = lastIndexBeforeChangesApplied;
+		currentHistoryStack = restoredHistoryStack;
+	}
+
 	function updateText(id: string, newText: string) {
 		texts.update(arr => arr.map(t => t.id === id ? { ...t, text: newText, width: t.width ?? editingWidth, height: t.height ?? editingHeight } : t));
-		// DOM-driven; no imperative draw
-		drawAll();
 	}
 
 	let measureCtx: CanvasRenderingContext2D | null = null;
@@ -658,11 +664,6 @@
 		editingHeight = newHeight;
 		textareaRef.style.width = editingWidth + 'px';
 		textareaRef.style.height = editingHeight + 'px';
-	}
-
-	// drawAll used to paint to the canvas; with SVG we render via Svelte markup so keep drawAll as a noop for compatibility
-	function drawAll() {
-		return;
 	}
 
 	function startResize(side: 'left'|'right'|'top'|'bottom', e: PointerEvent) {
