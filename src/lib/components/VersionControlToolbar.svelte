@@ -1,8 +1,8 @@
 <script lang="ts">
 	import Fa from 'svelte-fa';
-	import {faSync} from '@fortawesome/free-solid-svg-icons';
 	import { createEventDispatcher } from 'svelte';
 	import {faRotateLeft} from "@fortawesome/free-solid-svg-icons/faRotateLeft";
+	import {faCodeMerge} from "@fortawesome/free-solid-svg-icons/faCodeMerge";
 	const dispatch = createEventDispatcher();
 
 	function applyChanges() {
@@ -26,7 +26,7 @@
 		</button>
 		<button class="button is-info toolbar-button" aria-label="Apply changes" on:click={applyChanges}>
 			<span class="icon toolbar-icon">
-				<Fa icon={faSync} />
+				<Fa icon={faCodeMerge} />
 			</span>
 			<span>Apply Changes</span>
 		</button>
