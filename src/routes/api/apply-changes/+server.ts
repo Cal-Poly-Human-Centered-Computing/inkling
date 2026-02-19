@@ -1,7 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { json } from '@sveltejs/kit';
 import { generateChanges } from '$lib/server/openai';
-import { getColumnNames } from '$lib/utils/datasetStore';
 
 export const POST: RequestHandler = async ({ request }) => {
   try {

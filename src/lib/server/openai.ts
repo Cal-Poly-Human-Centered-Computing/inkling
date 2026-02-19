@@ -17,7 +17,6 @@ export async function generateChanges(payload: any): Promise<string> {
   const columnNames = payload.columnNames ?? [];
   const columnNamesString = columnNames.join(', ');
 
-  // Build the user prompt using the exact text provided by the user.
   const promptText = `Analyze the provided image. It is a sketch or image of a data visualization.
 Determine (but do not output) the following about the visualization:
 
@@ -42,6 +41,98 @@ ${columnNamesString}`;
     // The Responses API supports data URLs (data:image/png;base64,...) or image URLs
     userContent.push({ type: 'input_image', image_url: imageUrl });
   }
+
+  const body = {
+    model,
+    input: [
+      {
+        role: 'user',
+        content: userContent
+      }
+    ]
+  };
+
+  const res = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`OpenAI Responses API error ${res.status}: ${txt}`);
+  }
+
+  const data = await res.json();
+
+  // Try common places for textual output from Responses API
+  if (typeof data.output_text === 'string' && data.output_text.length > 0) {
+    return data.output_text;
+  }
+
+  // The `output` array can contain items with a `content` array; try to locate text there
+  if (Array.isArray(data.output)) {
+    for (const outItem of data.output) {
+      if (!outItem || !Array.isArray(outItem.content)) continue;
+      for (const c of outItem.content) {
+        if (!c) continue;
+        // Newer content items often have a `text` property
+        if (typeof c.text === 'string' && c.text.length > 0) return c.text;
+        // Some items may have type and text fields
+        if (c.type === 'output_text' && typeof c.text === 'string') return c.text;
+        // In some cases the content item might be a message-like object
+        if (c.type === 'message' && typeof c.text === 'string') return c.text;
+      }
+    }
+  }
+
+  // Fallbacks: try a few other known fields
+  if (Array.isArray(data.items) && data.items.length > 0) {
+    const first = data.items[0];
+    if (typeof first.text === 'string' && first.text.length > 0) return first.text;
+  }
+
+  // As a last resort return the raw JSON string (caller can parse if needed)
+  return JSON.stringify(data);
+}
+
+
+/**
+ * Server-side OpenAI helper.
+ * - Reads the API key from the private env (OPENAI_API_KEY)
+ * - Sends a Responses API request (text + optional image) and returns the assistant text
+ */
+export async function sendChat(payload: any): Promise<string> {
+  const key = OPENAI_API_KEY;
+  if (!key) {
+    throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY in your private environment.');
+  }
+
+  // Use a vision-capable model by default; allow override via env
+  const model = OPENAI_MODEL ?? 'gpt-4.1';
+
+  const currentSpec = payload.currentSpec;
+  const chatMessage = payload.chatMessage;
+
+  const promptText = `You are a helpful assistant for creating and editing Vega-Lite specifications. 
+  The user will provide you with a Vega-Lite spec and a chat message describing a change they want to make to the visualization. 
+  Your task is to understand the user's intent and generate an updated Vega-Lite spec that incorporates the requested change.
+  Match the fields/axis titles to the closest match in the column names from the given dataset URL.
+  If the user-provided spec is EMPTY, then the user is asking you to generate a new Vega-Lite spec from scratch based on the chat message.
+  Respond with ONLY the updated Vega-Lite JSON specification, and nothing else. Do not include any explanatory text or markdown formatting, just the raw JSON spec.
+  
+  Vega-Lite spec:
+  ${currentSpec ?? 'EMPTY'}
+    
+  User message:
+  ${chatMessage}
+  `;
+
+  // Build the Responses API input content array
+  const userContent: any[] = [{ type: 'input_text', text: promptText }];
 
   const body = {
     model,

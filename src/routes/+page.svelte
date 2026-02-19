@@ -3,6 +3,7 @@
   import { loadDatasetFromUrl as loadDatasetFromUrlHelper } from '$lib/utils/datasetLoader';
   import {getColumnNames, setDatasetFromDfd, setDatasetUrl} from '$lib/utils/datasetStore';
   import { code as codeStore } from '$lib/stores/code';
+  import {get} from "svelte/store";
 
   let uploadedFile: File | null = null;
   let canvasViewRef: any = null;
@@ -15,8 +16,31 @@
     console.log('Uploaded file:', uploadedFile);
   }
 
-  function handleSend(e: CustomEvent) {
-    console.log('Chat message sent:', e.detail);
+  async function handleSendChat(e: CustomEvent) {
+    const bodyPayload: any = { currentSpec: get(codeStore), chatMessage: e.detail };
+
+    console.log(bodyPayload);
+
+    const resp = await fetch('/api/send-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyPayload)
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error('Send chat failed:', resp.status, text);
+      return;
+    }
+
+    const jsonResp = await resp.json();
+    if (!jsonResp.ok) {
+      console.error('Send chat error:', jsonResp.error);
+      return;
+    }
+
+    const resultText: string = jsonResp.result ?? '';
+    await handleIncomingCodeUpdate(resultText);
   }
 
   // helper: convert data URL (data:<mime>;base64,...) to a Blob
@@ -103,36 +127,39 @@
       }
 
       const resultText: string = jsonResp.result ?? '';
-      const fenceMatch = resultText.match(/```(?:[\w-]*\n)?([\s\S]*?)```/);
-      const extracted = fenceMatch ? fenceMatch[1].trim() : resultText.trim();
+      await handleIncomingCodeUpdate(resultText);
 
-      if (extracted) {
-        // prefer updating the editor first so UI shows new code before CanvasView re-renders
-        if (codeEditorRef && typeof codeEditorRef.setCode === 'function') {
-          await codeEditorRef.setCode(extracted);
-        } else {
-          // fallback: update store directly
-          console.warn('CodeEditor reference missing; updating store directly');
-          codeStore.set(extracted);
-        }
-
-        // After the editor is updated and the visualization has time to re-render, clear overlays on the canvas
-        try {
-          // wait a tick for Svelte/Vega to pick up the new spec and render
-          await new Promise((resolve) => setTimeout(resolve, 100));
-          canvasViewRef.applyChanges();
-        } catch (err) {
-          console.warn('Failed to clear canvas overlays after applying changes', err);
-        }
-
-        console.log('Replaced editor code from applyChanges response');
-      } else {
-        console.warn('No code block found in applyChanges response; leaving code unchanged');
-      }
     } catch (err) {
       console.error('Failed to apply changes:', err);
     } finally {
       applying = false;
+    }
+  }
+
+  async function handleIncomingCodeUpdate(returnedCode: string) {
+    const fenceMatch = returnedCode.match(/```(?:[\w-]*\n)?([\s\S]*?)```/);
+    const extracted = fenceMatch ? fenceMatch[1].trim() : returnedCode.trim();
+
+    if (extracted) {
+      // prefer updating the editor first so UI shows new code before CanvasView re-renders
+      if (codeEditorRef && typeof codeEditorRef.setCode === 'function') {
+        await codeEditorRef.setCode(extracted);
+      } else {
+        // fallback: update store directly
+        console.warn('CodeEditor reference missing; updating store directly');
+        codeStore.set(extracted);
+      }
+
+      // After the editor is updated and the visualization has time to re-render, clear overlays on the canvas
+      try {
+        // wait a tick for Svelte/Vega to pick up the new spec and render
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        canvasViewRef.applyChanges();
+      } catch (err) {
+        console.warn('Failed to clear canvas overlays after applying changes', err);
+      }
+    } else {
+      console.warn('No code block found in response; leaving code unchanged');
     }
   }
 
@@ -163,7 +190,7 @@
 
       <!-- Chatbox pinned to bottom -->
       <div style="flex:0 0 auto; margin-top:0.5rem;">
-        <ChatBox on:send={handleSend} />
+        <ChatBox on:send={handleSendChat} />
       </div>
     </div>
 
