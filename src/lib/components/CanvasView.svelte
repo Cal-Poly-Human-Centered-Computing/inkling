@@ -301,6 +301,7 @@
 	}
 
 	function pointerDown(e: PointerEvent) {
+		if (e.button !== 0) return;
 		e.preventDefault();
 		ensureCanvasReady();
 		// If a text is currently being edited but user clicked elsewhere (not the textarea), commit it first
