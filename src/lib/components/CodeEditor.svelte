@@ -7,7 +7,7 @@
 	import { EditorState, StateEffect, StateField } from '@codemirror/state';
 	import {EditorView, keymap, Decoration, WidgetType, ViewPlugin} from '@codemirror/view';
 	import { json } from '@codemirror/lang-json';
-	import {defaultKeymap, indentLess, indentMore} from "@codemirror/commands";
+	import {defaultKeymap, history, historyKeymap, indentLess, indentMore} from "@codemirror/commands";
 	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
 	import {getDataToken, setDatasetFromDfd} from "$lib/utils/datasetStore";
 
@@ -346,13 +346,9 @@ ${indentedInner}
 }`;
 	}
 
-	onMount(async () => {
-		if (!editorContainer) return;
-
-		data = getDataToken();
-
-		const state = EditorState.create({
-			doc: extractInnerSpecFromFull(get(codeStore)),
+	function createNewEditorState(innerSpec: string) {
+		return EditorState.create({
+			doc: innerSpec,
 			extensions: [
 				json(),
 				// Theme to make editor fill container and allow scrolling
@@ -362,7 +358,9 @@ ${indentedInner}
 					'.cm-content': { whiteSpace: 'pre' },
 					'.cm-gutters': { flex: '0 0 auto' }
 				}),
+				history(),
 				keymap.of([
+					...historyKeymap,
 					{ key: 'Tab', run: indentMore },
 					{ key: 'Shift-Tab', run: indentLess },
 					...defaultKeymap
@@ -380,6 +378,14 @@ ${indentedInner}
 				headerFooterPlugin
 			]
 		});
+	}
+
+	onMount(async () => {
+		if (!editorContainer) return;
+
+		data = getDataToken();
+
+		const state = createNewEditorState(extractInnerSpecFromFull(get(codeStore)));
 
 		editorView = new EditorView({
 			state,
@@ -434,7 +440,11 @@ ${indentedInner}
 		if (editorMounted && editorView) {
 			// compute inner spec and dispatch to replace editor content
 			const inner = extractInnerSpecFromFull(finalString);
+			const newState = createNewEditorState(inner);
+			editorView.setState(newState)
+
 			editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: inner }, effects: setHeaderMeta.of({ schema, data }) });
+
 			if (textareaFallback) textareaFallback.value = inner;
 			await tick();
 			dispatch('codeApplied');
@@ -446,7 +456,10 @@ ${indentedInner}
 
 
 	export async function rollbackChanges() {
+		console.log(innerSpecBeforeAppliedChanges)
 		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: innerSpecBeforeAppliedChanges }, effects: setHeaderMeta.of({ schema, data }) });
+		const newState = createNewEditorState(innerSpecBeforeAppliedChanges);
+		editorView.setState(newState)
 		innerSpecBeforeAppliedChanges = '';
 	}
 
