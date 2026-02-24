@@ -13,7 +13,7 @@
 <div class="box" style="padding:0.75rem; border-top:1px solid #eee;">
 	<div class="field has-addons">
 		<div class="control is-expanded">
-			<input class="input" type="text" placeholder="Ask the AI to modify the spec or sketch..." bind:value={message} aria-label="Chat input" on:keydown={(e) => e.key === 'Enter' && send()} />
+			<input class="input" type="text" placeholder="Ask the AI to modify the spec..." bind:value={message} aria-label="Chat input" on:keydown={(e) => e.key === 'Enter' && send()} />
 		</div>
 		<div class="control">
 			<button class="button is-info" aria-label="Send message" on:click={send}>
