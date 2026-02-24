@@ -11,6 +11,9 @@
   let applying = false;
   let showRollbackConfirmationModal = false;
 
+  let historyStacks: Array<Array<string>> = [];
+  let historyIndex: -1;
+
   function handleUpload(e: CustomEvent) {
     uploadedFile = e.detail;
     console.log('Uploaded file:', uploadedFile);
@@ -197,12 +200,13 @@
     <div class="column is-half" style="display:flex; flex-direction:column; padding-left:0.5rem;">
       <!-- VersionControlToolbar -->
       <div style="flex:0 0 auto;">
-        <VersionControlToolbar on:applyChanges={handleApplyChanges} on:rollbackChanges={handleRollbackChanges} />
+        <VersionControlToolbar on:applyChanges={handleApplyChanges} on:rollbackChanges={handleRollbackChanges}
+                               canApply={historyIndex >= 1} canRollback={historyStacks.length >= 1}/>
       </div>
 
       <!-- Canvas / visualization area -->
       <div style="flex:1 1 auto; min-height:0;">
-        <CanvasView bind:this={canvasViewRef} />
+        <CanvasView bind:this={canvasViewRef} bind:historyIndex={historyIndex} bind:historyStacks={historyStacks} />
       </div>
     </div>
   </div>

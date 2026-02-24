@@ -5,6 +5,9 @@
 	import {faCodeMerge} from "@fortawesome/free-solid-svg-icons/faCodeMerge";
 	const dispatch = createEventDispatcher();
 
+	export let canApply: boolean = false;
+	export let canRollback: boolean = false;
+
 	function applyChanges() {
 		dispatch('applyChanges');
 	}
@@ -18,13 +21,13 @@
 <!-- Container uses flex with center alignment so all buttons line up vertically -->
 <div class="toolbar" style="display:flex; align-items:center; justify-content:end; padding:0.5rem;">
 	<div>
-		<button class="button is-warning toolbar-button" aria-label="Rollback" on:click={rollbackChanges}>
+		<button class="button is-warning toolbar-button" aria-label="Rollback" on:click={rollbackChanges} disabled="{!canRollback}">
 			<span class="icon toolbar-icon">
 				<Fa icon={faRotateLeft} />
 			</span>
 			<span>Rollback</span>
 		</button>
-		<button class="button is-info toolbar-button" aria-label="Apply changes" on:click={applyChanges}>
+		<button class="button is-info toolbar-button" aria-label="Apply changes" on:click={applyChanges} disabled="{!canApply}">
 			<span class="icon toolbar-icon">
 				<Fa icon={faCodeMerge} />
 			</span>

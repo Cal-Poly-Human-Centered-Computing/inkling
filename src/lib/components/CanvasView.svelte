@@ -118,10 +118,10 @@
 	let resizeStartRect: DOMRect | null = null;
 
 	// track each series of edits before/between changes applied
-	let historyStacks: Array<Array<string>> = [];
+	export let historyStacks: Array<Array<string>> = [];
 	let currentHistoryStack: Array<string> = [];
 	// track where we are in currentHistoryStack
-	let historyIndex = -1;
+	export let historyIndex = -1;
 
 	let isDrawing = false;
 	let currentStroke: Array<{x:number,y:number}> | null = null;
@@ -453,7 +453,7 @@
 	}
 
 	export function applyChanges() {
-		historyStacks.push(currentHistoryStack)
+		historyStacks = [...historyStacks, currentHistoryStack];
 		// start a new stack working off of this state
 		currentHistoryStack = [];
 		historyIndex = -1
