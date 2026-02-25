@@ -3,6 +3,7 @@
   import { code as codeStore } from '$lib/stores/code';
   import {get} from "svelte/store";
   import { conversationId as convIdStore } from '$lib/stores/conversationId';
+  import {getColumnNames} from "$lib/utils/datasetStore";
 
   let uploadedFile: File | null = null;
   let canvasViewRef: any = null;
@@ -19,7 +20,7 @@
   }
 
   async function handleSendChat(e: CustomEvent) {
-    const bodyPayload: any = { convId: get(convIdStore), currentSpec: get(codeStore), chatMessage: e.detail };
+    const bodyPayload: any = { convId: get(convIdStore), currentSpec: get(codeStore), chatMessage: e.detail, columnNames: getColumnNames() };
 
     console.log(bodyPayload);
 
@@ -86,20 +87,20 @@
         if (canvasViewRef && typeof canvasViewRef.exportCanvasDataUrl === 'function') {
           dataUrl = await canvasViewRef.exportCanvasDataUrl('image/png', undefined, window.devicePixelRatio ?? 1);
           // robust preview: try writing into a new blank tab; fallback to blob URL if write fails
-          // if (dataUrl) {
-          //   const opened = openImageInNewTab(dataUrl);
-          //   if (!opened) {
-          //     try {
-          //       const blob = dataUrlToBlob(dataUrl);
-          //       const url = URL.createObjectURL(blob);
-          //       try { window.open(url, '_blank'); } catch (err) { /* ignore */ }
-          //       // revoke after a short delay
-          //       setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 10000);
-          //     } catch (err) {
-          //       console.error('Blob fallback failed:', err);
-          //     }
-          //   }
-          // }
+          if (dataUrl) {
+            const opened = openImageInNewTab(dataUrl);
+            if (!opened) {
+              try {
+                const blob = dataUrlToBlob(dataUrl);
+                const url = URL.createObjectURL(blob);
+                try { window.open(url, '_blank'); } catch (err) { /* ignore */ }
+                // revoke after a short delay
+                setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 10000);
+              } catch (err) {
+                console.error('Blob fallback failed:', err);
+              }
+            }
+          }
         }
       } catch (err) {
         console.error('Failed to export canvas image:', err);
@@ -108,7 +109,7 @@
         return;
       }
 
-      const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), convId: get(convIdStore) };
+      const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), convId: get(convIdStore), columnNames: getColumnNames() };
 
       const resp = await fetch('/api/apply-changes', {
         method: 'POST',

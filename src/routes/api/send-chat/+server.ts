@@ -8,8 +8,9 @@ export const POST: RequestHandler = async ({ request }) => {
 
     let currentSpec = body.currentSpec ?? '';
     let chatMessage = body.chatMessage;
+    let columnNames = body.columnNames ?? null;
     let convId = body.constructor;
-    const result = await sendChat({ convId, currentSpec, chatMessage });
+    const result = await sendChat({ convId, currentSpec, chatMessage, columnNames });
     return json({ ok: true, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

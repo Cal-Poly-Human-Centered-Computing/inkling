@@ -9,15 +9,17 @@ export const POST: RequestHandler = async ({ request }) => {
     // Prefer an explicit image URL field (support both `image` and `imageUrl` keys)
     let imageUrl: string | null = null;
     let currentSpec: string = '';
+    let columnNames: string[] | null = null;
     let convId: number | null = null;
     if (body && typeof body === 'object') {
       imageUrl = (body as any).image ?? (body as any).imageUrl ?? null;
       currentSpec = body.currentSpec ?? '';
+      columnNames = body.columnNames ?? null;
       convId = body.convId
     }
 
     // Forward only the image URL (or null) to the generateChanges helper
-    const result = await applyChanges({ convId, image: imageUrl, currentSpec });
+    const result = await applyChanges({ convId, image: imageUrl, currentSpec, columnNames });
     return json({ ok: true, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

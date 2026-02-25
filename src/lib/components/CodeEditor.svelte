@@ -574,18 +574,18 @@ ${indentedInner}
 
 				data = { url: datasetUrl };
 
-				const bodyPayload: any = { convId: get(convIdStore), columnNames: getColumnNames(), exampleRow: getFirstRow() };
+				// const bodyPayload: any = { convId: get(convIdStore), columnNames: getColumnNames(), exampleRow: getFirstRow() };
 
-				const resp = await fetch('/api/upload-column-names', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify(bodyPayload)
-				});
-
-				if (!resp.ok) {
-					console.error('Upload Column Names failed');
-					return;
-				}
+				// const resp = await fetch('/api/upload-column-names', {
+				// 	method: 'POST',
+				// 	headers: { 'Content-Type': 'application/json' },
+				// 	body: JSON.stringify(bodyPayload)
+				// });
+				//
+				// if (!resp.ok) {
+				// 	console.error('Upload Column Names failed');
+				// 	return;
+				// }
 			} catch (err) {
 				console.error('Failed to load dataset via helper:', err);
 			}

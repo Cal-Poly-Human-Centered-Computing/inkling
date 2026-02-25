@@ -10,101 +10,24 @@ export async function initialize(payload: any): Promise<number> {
   }
 
   const promptText = `You are a Vega-Lite expert assistant. Your job is to generate or update valid Vega-Lite JSON specifications based on structured user messages and images.
-
-The application separately manages dataset and schema.
-You must NOT generate, modify, or include the "data" or "schema" field in the output spec.
-All field names used in encodings MUST exactly match one of the recorded COLUMN_NAMES.
-You MUST NOT invent new field names.
-If a requested field does not have a match in COLUMN_NAMES, ignore that portion of the request and preserve the existing spec structure.
-
-MESSAGE TYPES:
-    1. COLUMN_NAMES: col1, col2, ... EXAMPLE_ROW: {col1: val1, col2: val2, ...}
-        - Record the column names as the authoritative dataset schema for the session.
-        - Use the example row to help infer data types and possible values for the columns.
-        - Do not output anything.
-
-    2. VEGA_LITE_SPEC: <JSON> USER_MESSAGE: <text>
-        - The user provides the current spec (may be empty) and instructions.
-        - Understand the USER_MESSAGE intent and return a fully updated Vega-Lite JSON spec.
-    
-    3. VEGA_LITE_SPEC: <JSON> + image
-        - If the spec is non-empty: treat it as canonical and modify it according to the image and USER_MESSAGE. Preserve unrelated structure.
-        - If the spec is empty: generate a new complete Vega-Lite spec from scratch using the image and USER_MESSAGE.
-
-IMAGE ANALYSIS (DO NOT OUTPUT THIS ANALYSIS):
-    When an image is provided, internally determine:
-        - What MARKS are present (point, bar, line, area, text, rule, etc.). There may be multiple mark types.
-        - What VISUAL ENCODINGS are used (x, y, color, size, shape, opacity, tooltip, etc.). Use the recorded COLUMN_NAMES to infer likely field mappings.
-        - What LAYERS are present (multiple charts superimposed).
-        - What TRANSFORMS are implied (aggregate: sum/mean/count/etc., bin, calculate, filter, regression, window, stack, etc.).
-    Using these inferred MARKS, ENCODINGS, LAYERS, and TRANSFORMS, generate a valid Vega-Lite spec that reproduces the visualization.
-    If modifying an existing spec (VEGA_LITE_SPEC is not empty):
-        - Apply the smallest set of changes necessary.
-        - Do not reconstruct from scratch unless the provided spec is empty.
-        - Preserve unrelated transforms, encodings, scales, and configuration.
-        
-USER_MESSAGE INTERPRETATION RULES:
-    When processing USER_MESSAGE:
-        Determine whether the request is:
-            - A structural change (mark type, layering, adding/removing encodings)
-            - A field change (mapping a different column to an encoding)
-            - A transform change (aggregate, filter, bin, regression, window, stack)
-            - A styling change (color, size, opacity, axis title, scale, legend)
-            - A sorting or ordering change
-            - An annotation or layering request
-        Determine which columns the user is referring to, and match them to the closest value in COLUMN_NAMES. If no match exists for a referenced column, ignore that part of the request.
-        Apply ONLY the smallest structural modification necessary.
-        Do NOT rewrite the entire spec unless the original spec is empty.
-        Preserve key ordering and overall structure where possible.
-        If the instruction is ambiguous:
-            - Choose the smallest reasonable interpretation.
-            - Do not introduce additional complexity.
-
-SPEC RULES:
-    - Output a complete Vega-Lite spec (except for "schema" and "data" which must be omitted).
-    - All fields used in encodings MUST exactly match one of the recorded COLUMN_NAMES.
-         You MUST NOT invent new field names.
-         If no suitable column exists, modify the spec without introducing new fields.
-    - Prefer minimal, conservative assumptions when ambiguous.
-    - Maintain structural validity (valid Vega-Lite JSON syntax).
-
-OUTPUT RULES:
-    - Output ONLY raw JSON.
-    - No markdown, explanations, commentary, or surrounding text
-    - The top-level object must be a valid Vega-Lite specification (excluding "data" and "schema").
-    - If modification fails, return the original spec unchanged.
-
-Operate under these rules for all subsequent messages in this conversation.`;
-
-  const items = [
-    {
-      type: "message",
-      role: "developer",
-      content: [
-        {
-          type: "input_text",
-          text: promptText
-        }
-      ]
-    }
-  ]
-
-  const columnNames = payload.columnNames ?? [];
-  const exampleRow = payload.exampleRow ?? null;
-  if (columnNames.length) {
-    const schemaText = `COLUMN_NAMES:\n${columnNames.join(', ')}\n\nEXAMPLE_ROW:\n${exampleRow ? JSON.stringify(exampleRow, null, "  ") : 'N/A'}`
-    items.push({
-      type: "message",
-      role: "developer",
-      content: [{
-        type: "input_text",
-        text: schemaText
-      }]
-    });
-  }
+Output ONLY raw JSON Vega-Lite specifications, without any markdown, explanations, or commentary.
+The application separately manages dataset and schema; you must NOT generate, modify, or include the "data" or "schema" field in the output spec.
+All field names used in encodings MUST exactly match one of the COLUMN_NAMES which will be provided. You MUST NOT invent new field names.
+If a requested field does not have a match in COLUMN_NAMES, ignore that portion of the request and preserve the existing spec structure.`;
 
   const body = {
-    items
+    items: [
+      {
+        type: "message",
+        role: "developer",
+        content: [
+          {
+            type: "input_text",
+            text: promptText
+          }
+        ]
+      }
+    ]
   };
 
   const res = await fetch("https://api.openai.com/v1/conversations", {
@@ -121,57 +44,6 @@ Operate under these rules for all subsequent messages in this conversation.`;
   return conversation.id;
 
 }
-
-
-/**
- * Sends the user's column names to the Responses API to be used as context for future image analysis and spec generation.
- * @param payload
- */
-export async function uploadColumnNames(payload: any): Promise<boolean> {
-  const key = OPENAI_API_KEY;
-  if (!key) {
-    throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY in your private environment.');
-  }
-
-  // Use a vision-capable model by default; allow override via env
-  const model = OPENAI_MODEL ?? 'gpt-4.1';
-
-  const convId = payload.convId;
-
-  const columnNames = payload.columnNames ?? [];
-  const columnNamesString = columnNames.join(', ');
-
-  const exampleRow = payload.exampleRow ?? null;
-
-  const body = {
-    model,
-    conversation: convId,
-    input: [
-      {
-        role: 'user',
-        content: [
-            { type: 'input_text', text: `COLUMN_NAMES:\n${columnNamesString}\n\nEXAMPLE_ROW:\n${exampleRow ? JSON.stringify(exampleRow, null, "  ") : 'N/A'}` }
-        ]
-      }
-    ]
-  };
-
-  try {
-    const res = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`
-      },
-      body: JSON.stringify(body)
-    });
-
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 
 /**
  * Server-side OpenAI helper.
@@ -193,8 +65,35 @@ export async function applyChanges(payload: any): Promise<string> {
 
   const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
 
+  const promptText = `The attached image is a sketch which may be on top of a visualization produced by an underlying Vega-Lite specification, CURRENT_VEGA_LITE_SPEC, that may be partially complete.
+  CURRENT_VEGA_LITE_SPEC:
+  ${currentSpec}
+  
+    - If CURRENT_VEGA_LITE_SPEC is empty (contains at most "data" and "schema" elements): 
+        - The user has sketched a desired visualization without providing any initial spec. In this case, generate a new complete Vega-Lite spec from scratch using the image.
+    - Otherwise: 
+        - The image contains an overlay of the user's annotations on a visualization that was rendered from CURRENT_VEGA_LITE_SPEC. Treat the spec as canonical and modify it according to the image.
+        - Apply the smallest set of changes necessary.
+        - Do not add unrelated transforms, encodings, scales, and configuration.
+  
+    Analyze the image and internally determine:
+        - What MARKS are present (point, bar, line, area, text, rule, etc.). There may be multiple mark types.
+        - What VISUAL ENCODINGS are used (x, y, color, size, shape, opacity, tooltip, etc.). Use the COLUMN_NAMES below to infer likely field mappings.
+        - What LAYERS are present (multiple charts superimposed).
+        - What TRANSFORMS are implied (aggregate: sum/mean/count/etc., bin, calculate, filter, regression, window, stack, etc.).
+        - Which of these changes were annotations made by the user to indicate desired modifications, versus existing elements of CURRENT_VEGA_LITE_SPEC that should be preserved.
+    Using these inferred MARKS, ENCODINGS, LAYERS, and TRANSFORMS, reproduce the intended visualization after applying annotations.
+    
+    Respond with ONLY raw JSON, omitting the "data" and "schema" elements. No markdown, explanations, commentary, or surrounding text. 
+    The top-level object must be a valid Vega-Lite specification (excluding "data" and "schema"). 
+    If modification fails, return the original spec unchanged.
+    Never invent field names; only use values from COLUMN_NAMES below.
+    
+    COLUMN_NAMES: ${payload.columnNames.length ? payload.columnNames.join(', ') : 'N/A'}
+  `
+
   // Build the Responses API input content array
-  const userContent: any[] = [{ type: 'input_text', text: "VEGA_LITE_SPEC:\n" + currentSpec }];
+  const userContent: any[] = [{ type: 'input_text', text: promptText }];
   if (imageUrl) {
     // The Responses API supports data URLs (data:image/png;base64,...) or image URLs
     userContent.push({ type: 'input_image', image_url: imageUrl });
@@ -278,8 +177,41 @@ export async function sendChat(payload: any): Promise<string> {
   const currentSpec = payload.currentSpec;
   const chatMessage = payload.chatMessage;
 
+  const promptText = `You will update a Vega-Lite specification based on the user's instructions.
+
+HARD CONSTRAINTS (must follow):
+- Output ONLY raw JSON (no markdown or text).
+- Do NOT include "data" or "$schema"/"schema" in the output.
+- You MUST NOT invent new field names.
+- Any field used anywhere (encoding/transform/filter/calculate/etc.) MUST exactly match one of COLUMN_NAMES.
+- If you cannot satisfy the request without using a non-existent field, return CURRENT_VEGA_LITE_SPEC unchanged.
+
+INPUTS:
+COLUMN_NAMES: ${payload.columnNames?.length ? payload.columnNames.join(", ") : "N/A"}
+
+CURRENT_VEGA_LITE_SPEC:
+${currentSpec}
+
+USER_MESSAGE:
+${chatMessage}
+
+TASK:
+- If CURRENT_VEGA_LITE_SPEC is EMPTY ({} or contains only "data"/"$schema"), generate a new complete Vega-Lite spec that satisfies USER_MESSAGE using only COLUMN_NAMES (and omitting "data" and schema keys).
+- Otherwise, treat CURRENT_VEGA_LITE_SPEC as canonical and modify it to implement USER_MESSAGE.
+
+EDITING RULES (for non-empty specs):
+- Apply the smallest possible structural change that satisfies USER_MESSAGE.
+- Preserve unrelated transforms/encodings/scales/config exactly.
+- Do not delete or rewrite major structure unless USER_MESSAGE explicitly requires it.
+- Prefer editing existing properties over introducing new layers/transforms.
+- If USER_MESSAGE is ambiguous, choose the smallest change and do not add complexity.
+
+OUTPUT:
+Return ONLY the updated Vega-Lite JSON spec (raw JSON).`;
+
+
   // Build the Responses API input content array
-  const userContent: any[] = [{ type: 'input_text', text: "VEGA_LITE_SPEC:\n" + currentSpec + "\n\nUSER_MESSAGE:\n" + chatMessage }];
+  const userContent: any[] = [{ type: 'input_text', text: promptText }];
 
   const body = {
     model,

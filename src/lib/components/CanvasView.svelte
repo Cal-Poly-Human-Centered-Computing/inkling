@@ -1038,7 +1038,7 @@
 		</div>
 	</div>
 
-	<div style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 20px; z-index:10000;">
+	<div style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 20px 20px 0 20px; z-index:10000;">
 		<CanvasToolbar selected={selectedTool} on:selectTool={handleSelectTool} on:undo={undo} on:redo={redo} />
 	</div>
 
