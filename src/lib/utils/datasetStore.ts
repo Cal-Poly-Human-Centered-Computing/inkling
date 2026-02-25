@@ -161,6 +161,45 @@ export async function getDfdFromStore(): Promise<any | null> {
   }
 }
 
+
+
+export function getFirstRow(): Record<string, any> | null {
+  const payload = readRaw();
+  if (!payload || !payload.data) return null;
+
+  const { data, columns } = payload;
+  if (!Array.isArray(data) || data.length === 0 || !columns || !columns.length) return null;
+
+  const first = data[0];
+
+  // case: array of objects (toJSON)
+  if (typeof first === 'object' && first !== null && !Array.isArray(first)) {
+    // preserve column order if provided
+    if (Array.isArray(columns) && columns.length > 0) {
+      const obj: Record<string, any> = {};
+      for (const col of columns) {
+        obj[col] = (first as Record<string, any>)[col];
+      }
+      return obj;
+    }
+    // return a shallow copy
+    return { ...(first as Record<string, any>) };
+  }
+
+  // case: 2D array of values
+  if (Array.isArray(first)) {
+    const values = first as any[];
+    const obj: Record<string, any> = {};
+    for (let i = 0; i < columns.length; i++) {
+      obj[columns[i]] = values[i];
+    }
+    return obj;
+  }
+
+  return null;
+}
+
+
 /**
  * Read the raw persisted payload (no reconstruction). Useful for quick inspection or partial restores.
  */

@@ -1,9 +1,8 @@
 <script lang="ts">
   import {CodeEditor, ChatBox, VersionControlToolbar, CanvasView} from '$lib/components';
-  import { loadDatasetFromUrl as loadDatasetFromUrlHelper } from '$lib/utils/datasetLoader';
-  import {getColumnNames, setDatasetFromDfd, setDatasetUrl} from '$lib/utils/datasetStore';
   import { code as codeStore } from '$lib/stores/code';
   import {get} from "svelte/store";
+  import { conversationId as convIdStore } from '$lib/stores/conversationId';
 
   let uploadedFile: File | null = null;
   let canvasViewRef: any = null;
@@ -20,7 +19,7 @@
   }
 
   async function handleSendChat(e: CustomEvent) {
-    const bodyPayload: any = { currentSpec: get(codeStore), chatMessage: e.detail };
+    const bodyPayload: any = { convId: get(convIdStore), currentSpec: get(codeStore), chatMessage: e.detail };
 
     console.log(bodyPayload);
 
@@ -109,7 +108,7 @@
         return;
       }
 
-      const bodyPayload: any = { image: dataUrl, columnNames: getColumnNames() };
+      const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), convId: get(convIdStore) };
 
       const resp = await fetch('/api/apply-changes', {
         method: 'POST',
