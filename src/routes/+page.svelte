@@ -16,36 +16,46 @@
   let historyStacks: Array<Array<string>> = [];
   let historyIndex: -1;
 
+  let chatSending: boolean = false;
+
   function handleUpload(e: CustomEvent) {
     uploadedFile = e.detail;
     console.log('Uploaded file:', uploadedFile);
   }
 
   async function handleSendChat(e: CustomEvent) {
+    // Block additional sends while waiting for the server
+    if (chatSending) return;
+    chatSending = true;
+
     const bodyPayload: any = { convId: get(convIdStore), currentSpec: get(codeStore), chatMessage: e.detail, columnNames: getColumnNames() };
 
     console.log(bodyPayload);
 
-    const resp = await fetch('/api/send-chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bodyPayload)
-    });
+    try {
+      const resp = await fetch('/api/send-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload)
+      });
 
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.error('Send chat failed:', resp.status, text);
-      return;
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error('Send chat failed:', resp.status, text);
+        return;
+      }
+
+      const jsonResp = await resp.json();
+      if (!jsonResp.ok) {
+        console.error('Send chat error:', jsonResp.error);
+        return;
+      }
+
+      const resultText: string = jsonResp.result ?? '';
+      await handleIncomingCodeUpdate(resultText);
+    } finally {
+      chatSending = false;
     }
-
-    const jsonResp = await resp.json();
-    if (!jsonResp.ok) {
-      console.error('Send chat error:', jsonResp.error);
-      return;
-    }
-
-    const resultText: string = jsonResp.result ?? '';
-    await handleIncomingCodeUpdate(resultText);
   }
 
   // helper: convert data URL (data:<mime>;base64,...) to a Blob
@@ -206,7 +216,7 @@
 
       <!-- Chatbox pinned to bottom -->
       <div style="flex:0 0 auto; margin-top:0.5rem;">
-        <ChatBox on:send={handleSendChat} />
+        <ChatBox sending={chatSending} on:send={handleSendChat} />
       </div>
     </div>
 
