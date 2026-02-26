@@ -1,28 +1,15 @@
-# sv
+## Environment Setup
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+This project uses a server-side OpenAI API key for the "Apply Changes" feature.
 
-## Creating a project
+- Copy `.env.example` to `.env` and set `OPENAI_API_KEY` to your key (do not commit `.env`).
 
-If you're seeing this, you've probably already done this step. Congrats!
+## Running the project
 
-```sh
-# create a new project in the current directory
-npx sv create
-
-# create a new project in my-app
-npx sv create my-app
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+To start a development server, run this command from the root directory:
 
 ```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+npm run dev -- --host
 ```
 
 ## Building
@@ -36,16 +23,3 @@ npm run build
 You can preview the production build with `npm run preview`.
 
 > To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
-
-## Environment
-
-This project uses a server-side OpenAI API key for the "Apply Changes" feature.
-
-- Copy `.env.example` to `.env` and set `OPENAI_API_KEY` to your key (do not commit `.env`).
-
-Example:
-
-```
-cp .env.example .env
-# edit .env and replace OPENAI_API_KEY
-```
