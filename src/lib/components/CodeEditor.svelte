@@ -9,7 +9,8 @@
 	import { json } from '@codemirror/lang-json';
 	import {defaultKeymap, history, historyKeymap, indentLess, indentMore} from "@codemirror/commands";
 	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
-	import {getDataToken, setDatasetFromDfd} from "$lib/utils/datasetStore";
+	import {getColumnNames, getDataToken, getFirstRow, setDatasetFromDfd} from "$lib/utils/datasetStore";
+	import { conversationId as convIdStore } from '$lib/stores/conversationId';
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -385,6 +386,10 @@ ${indentedInner}
 
 		data = getDataToken();
 
+		if (data?.url) {
+			replaceTopLevelDataValue(data.url);
+		}
+
 		const state = createNewEditorState(extractInnerSpecFromFull(get(codeStore)));
 
 		editorView = new EditorView({
@@ -417,9 +422,12 @@ ${indentedInner}
 		let finalObj: any = null;
 		let finalString = '';
 
+		console.log(newCode);
+
 		try {
 			// TODO: first attempt to parse newCode as JSON somewhere else, to guarantee that it is JSON when it gets here
 			const parsed = JSON.parse(newCode);
+			console.log(parsed);
 			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
 				const rest: any = {};
 				for (const k of Object.keys(parsed)) {
@@ -566,7 +574,18 @@ ${indentedInner}
 
 				data = { url: datasetUrl };
 
-				// Optionally: forward to canvas or store; kept as a log for now
+				// const bodyPayload: any = { convId: get(convIdStore), columnNames: getColumnNames(), exampleRow: getFirstRow() };
+
+				// const resp = await fetch('/api/upload-column-names', {
+				// 	method: 'POST',
+				// 	headers: { 'Content-Type': 'application/json' },
+				// 	body: JSON.stringify(bodyPayload)
+				// });
+				//
+				// if (!resp.ok) {
+				// 	console.error('Upload Column Names failed');
+				// 	return;
+				// }
 			} catch (err) {
 				console.error('Failed to load dataset via helper:', err);
 			}

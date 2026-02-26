@@ -1,9 +1,13 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
+	import Fa from 'svelte-fa';
+	import { faSpinner } from '@fortawesome/free-solid-svg-icons/faSpinner';
 	const dispatch = createEventDispatcher();
+	export let sending: boolean = false;
 	let message = '';
 
 	function send() {
+		if (sending) return;
 		if (message.trim() === '') return;
 		dispatch('send', message.trim());
 		message = '';
@@ -13,12 +17,16 @@
 <div class="box" style="padding:0.75rem; border-top:1px solid #eee;">
 	<div class="field has-addons">
 		<div class="control is-expanded">
-			<input class="input" type="text" placeholder="Ask the AI to modify the spec..." bind:value={message} aria-label="Chat input" on:keydown={(e) => e.key === 'Enter' && send()} />
+			<input class="input" type="text" placeholder="Ask the AI to modify the spec..." bind:value={message} aria-label="Chat input" on:keydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (!sending) send(); } }} disabled={sending} aria-busy={sending} />
 		</div>
 		<div class="control">
-			<button class="button is-info" aria-label="Send message" on:click={send}>
+			<button class="button is-info" aria-label={sending ? 'Sending' : 'Send message'} on:click={send} disabled={sending} aria-disabled={sending}>
 				<span class="icon">
-					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+					{#if sending}
+						<Fa icon={faSpinner} spin />
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+					{/if}
 				</span>
 			</button>
 		</div>

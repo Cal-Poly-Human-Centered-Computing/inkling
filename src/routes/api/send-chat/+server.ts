@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { json } from '@sveltejs/kit';
-import {generateChanges, sendChat} from '$lib/server/openai';
+import {sendChat} from '$lib/server/openai';
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
@@ -8,8 +8,9 @@ export const POST: RequestHandler = async ({ request }) => {
 
     let currentSpec = body.currentSpec ?? '';
     let chatMessage = body.chatMessage;
-
-    const result = await sendChat({ currentSpec, chatMessage });
+    let columnNames = body.columnNames ?? null;
+    let convId = body.constructor;
+    const result = await sendChat({ convId, currentSpec, chatMessage, columnNames });
     return json({ ok: true, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

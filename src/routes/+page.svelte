@@ -1,9 +1,9 @@
 <script lang="ts">
   import {CodeEditor, ChatBox, VersionControlToolbar, CanvasView} from '$lib/components';
-  import { loadDatasetFromUrl as loadDatasetFromUrlHelper } from '$lib/utils/datasetLoader';
-  import {getColumnNames, setDatasetFromDfd, setDatasetUrl} from '$lib/utils/datasetStore';
   import { code as codeStore } from '$lib/stores/code';
   import {get} from "svelte/store";
+  import { conversationId as convIdStore } from '$lib/stores/conversationId';
+  import {getColumnNames} from "$lib/utils/datasetStore";
 
   let uploadedFile: File | null = null;
   let canvasViewRef: any = null;
@@ -11,8 +11,12 @@
   let applying = false;
   let showRollbackConfirmationModal = false;
 
+  let renderedVisPresent = false; // track whether we've rendered a spec yet to determine if "apply changes" should do sketch-to-spec or spec update
+
   let historyStacks: Array<Array<string>> = [];
   let historyIndex: -1;
+
+  let chatSending: boolean = false;
 
   function handleUpload(e: CustomEvent) {
     uploadedFile = e.detail;
@@ -20,30 +24,38 @@
   }
 
   async function handleSendChat(e: CustomEvent) {
-    const bodyPayload: any = { currentSpec: get(codeStore), chatMessage: e.detail };
+    // Block additional sends while waiting for the server
+    if (chatSending) return;
+    chatSending = true;
+
+    const bodyPayload: any = { convId: get(convIdStore), currentSpec: get(codeStore), chatMessage: e.detail, columnNames: getColumnNames() };
 
     console.log(bodyPayload);
 
-    const resp = await fetch('/api/send-chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bodyPayload)
-    });
+    try {
+      const resp = await fetch('/api/send-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload)
+      });
 
-    if (!resp.ok) {
-      const text = await resp.text();
-      console.error('Send chat failed:', resp.status, text);
-      return;
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error('Send chat failed:', resp.status, text);
+        return;
+      }
+
+      const jsonResp = await resp.json();
+      if (!jsonResp.ok) {
+        console.error('Send chat error:', jsonResp.error);
+        return;
+      }
+
+      const resultText: string = jsonResp.result ?? '';
+      await handleIncomingCodeUpdate(resultText);
+    } finally {
+      chatSending = false;
     }
-
-    const jsonResp = await resp.json();
-    if (!jsonResp.ok) {
-      console.error('Send chat error:', jsonResp.error);
-      return;
-    }
-
-    const resultText: string = jsonResp.result ?? '';
-    await handleIncomingCodeUpdate(resultText);
   }
 
   // helper: convert data URL (data:<mime>;base64,...) to a Blob
@@ -109,13 +121,24 @@
         return;
       }
 
-      const bodyPayload: any = { image: dataUrl, columnNames: getColumnNames() };
+      let resp;
 
-      const resp = await fetch('/api/apply-changes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload)
-      });
+      if (canvasViewRef.renderedVisPresent()) {
+        const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), convId: get(convIdStore), columnNames: getColumnNames() };
+        resp = await fetch('/api/apply-changes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
+      } else {
+        const bodyPayload: any = { image: dataUrl, convId: get(convIdStore), columnNames: getColumnNames() };
+        console.log(bodyPayload)
+        resp = await fetch('/api/sketch-to-spec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
+      }
 
       if (!resp.ok) {
         const text = await resp.text();
@@ -193,7 +216,7 @@
 
       <!-- Chatbox pinned to bottom -->
       <div style="flex:0 0 auto; margin-top:0.5rem;">
-        <ChatBox on:send={handleSendChat} />
+        <ChatBox sending={chatSending} on:send={handleSendChat} />
       </div>
     </div>
 
@@ -201,12 +224,12 @@
       <!-- VersionControlToolbar -->
       <div style="flex:0 0 auto;">
         <VersionControlToolbar on:applyChanges={handleApplyChanges} on:rollbackChanges={handleRollbackChanges}
-                               canApply={historyIndex >= 1} canRollback={historyStacks.length >= 1}/>
+                               canApply={historyIndex >= 1} canRollback={historyStacks.length >= 1} applying={applying} />
       </div>
 
       <!-- Canvas / visualization area -->
       <div style="flex:1 1 auto; min-height:0;">
-        <CanvasView bind:this={canvasViewRef} bind:historyIndex={historyIndex} bind:historyStacks={historyStacks} />
+        <CanvasView bind:this={canvasViewRef} bind:historyIndex={historyIndex} bind:historyStacks={historyStacks} applying={applying} />
       </div>
     </div>
   </div>
