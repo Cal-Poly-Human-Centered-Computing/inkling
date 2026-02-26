@@ -109,13 +109,25 @@
         return;
       }
 
-      const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), convId: get(convIdStore), columnNames: getColumnNames() };
+      const renderedVisPresent = canvasViewRef.baseSvg != null;
 
-      const resp = await fetch('/api/apply-changes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload)
-      });
+      let resp;
+
+      if (renderedVisPresent) {
+        const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), convId: get(convIdStore), columnNames: getColumnNames() };
+        resp = await fetch('/api/apply-changes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
+      } else {
+        const bodyPayload: any = { image: dataUrl, convId: get(convIdStore), columnNames: getColumnNames() };
+        resp = await fetch('/api/sketch-to-spec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
+      }
 
       if (!resp.ok) {
         const text = await resp.text();

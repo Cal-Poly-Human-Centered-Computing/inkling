@@ -12,6 +12,10 @@
 	let svgEl: SVGSVGElement | null = null;
 	let view: any = null;
 
+	// the svg rendered by the vega-lite specs - is null if nothing is rendered
+	// moving here so other components can tell whether the user is drawing from scratch or annotating a visualization
+	export let baseSvg: SVGElement | null = null;
+
 	// debounced rendering of the Vega-Lite spec
 	let renderTimeout: ReturnType<typeof setTimeout> | null = null;
 	const RENDER_DEBOUNCE_MS = 800; // 800 ms
@@ -922,7 +926,6 @@
 		}
 
 		// Find the base visualization SVG inside the container (vega-embed writes an svg inside containerEl)
-		let baseSvg: SVGElement | null = null;
 		try { if (containerEl) baseSvg = containerEl.querySelector('svg'); } catch (err) { baseSvg = null; }
 		const overlaySvg = svgEl;
 

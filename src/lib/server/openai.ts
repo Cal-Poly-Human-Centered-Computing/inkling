@@ -47,6 +47,105 @@ If a requested field does not have a match in COLUMN_NAMES, ignore that portion 
 
 /**
  * Server-side OpenAI helper.
+ * Given a sketch, generates corresponding specs from scratch (without an underlying vis already rendered)
+ */
+export async function sketchToSpec(payload: any): Promise<string> {
+  const key = OPENAI_API_KEY;
+  if (!key) {
+    throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY in your private environment.');
+  }
+
+  // Use a vision-capable model by default; allow override via env
+  const model = OPENAI_MODEL ?? 'gpt-4.1';
+
+  const convId = payload.convId;
+
+  const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
+
+  const promptText = `The attached image is a sketch of a data visualization. Your task is to generate a Vega-Lite spec that will reproduce the visualization.
+  
+    Analyze the image and internally determine:
+        - What MARKS are present (point, bar, line, area, text, rule, etc.). There may be multiple mark types.
+        - What VISUAL ENCODINGS are used (x, y, color, size, shape, opacity, tooltip, etc.). Use the COLUMN_NAMES below to infer likely field mappings.
+        - What LAYERS are present (multiple charts superimposed).
+        - What TRANSFORMS are implied (aggregate: sum/mean/count/etc., bin, calculate, filter, regression, window, stack, etc.).
+        - Which of these changes were annotations made by the user to indicate desired modifications, versus existing elements of CURRENT_VEGA_LITE_SPEC that should be preserved.
+    Using these inferred MARKS, ENCODINGS, LAYERS, and TRANSFORMS, generate the simplest possible corresponding Vega-Lite spec to reproduce the visualization.
+    
+    Respond with ONLY raw JSON, omitting the "data" and "schema" elements (those are handled separately). No markdown, explanations, commentary, or surrounding text. 
+    The top-level object must be a valid Vega-Lite specification (excluding "data" and "schema"). 
+    Never invent field names; only use values from COLUMN_NAMES below.
+    
+    COLUMN_NAMES: ${payload.columnNames.length ? payload.columnNames.join(', ') : 'N/A'}
+  `
+
+  // Build the Responses API input content array
+  const userContent: any[] = [{ type: 'input_text', text: promptText }];
+  if (imageUrl) {
+    // The Responses API supports data URLs (data:image/png;base64,...) or image URLs
+    userContent.push({ type: 'input_image', image_url: imageUrl });
+  }
+
+  const body = {
+    model,
+    conversation: convId,
+    input: [
+      {
+        role: 'user',
+        content: userContent
+      }
+    ]
+  };
+
+  const res = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`OpenAI Responses API error ${res.status}: ${txt}`);
+  }
+
+  const data = await res.json();
+
+  // Try common places for textual output from Responses API
+  if (typeof data.output_text === 'string' && data.output_text.length > 0) {
+    return data.output_text;
+  }
+
+  // The `output` array can contain items with a `content` array; try to locate text there
+  if (Array.isArray(data.output)) {
+    for (const outItem of data.output) {
+      if (!outItem || !Array.isArray(outItem.content)) continue;
+      for (const c of outItem.content) {
+        if (!c) continue;
+        // Newer content items often have a `text` property
+        if (typeof c.text === 'string' && c.text.length > 0) return c.text;
+        // Some items may have type and text fields
+        if (c.type === 'output_text' && typeof c.text === 'string') return c.text;
+        // In some cases the content item might be a message-like object
+        if (c.type === 'message' && typeof c.text === 'string') return c.text;
+      }
+    }
+  }
+
+  // Fallbacks: try a few other known fields
+  if (Array.isArray(data.items) && data.items.length > 0) {
+    const first = data.items[0];
+    if (typeof first.text === 'string' && first.text.length > 0) return first.text;
+  }
+
+  // As a last resort return the raw JSON string (caller can parse if needed)
+  return JSON.stringify(data);
+}
+
+/**
+ * Server-side OpenAI helper.
  * - Reads the API key from the private env (OPENAI_API_KEY)
  * - Sends a Responses API request (text + optional image) and returns the assistant text
  */
@@ -65,32 +164,27 @@ export async function applyChanges(payload: any): Promise<string> {
 
   const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
 
-  const promptText = `The attached image is a sketch which may be on top of a visualization produced by an underlying Vega-Lite specification, CURRENT_VEGA_LITE_SPEC, that may be partially complete.
+  const promptText = `The attached image contains an overlay of the user's annotations on a visualization that was rendered from the following CURRENT_VEGA_LITE_SPEC.
+  
   CURRENT_VEGA_LITE_SPEC:
   ${currentSpec}
   
-    - If CURRENT_VEGA_LITE_SPEC is empty (contains at most "data" and "schema" elements): 
-        - The user has sketched a desired visualization without providing any initial spec. In this case, generate a new complete Vega-Lite spec from scratch using the image.
-    - Otherwise: 
-        - The image contains an overlay of the user's annotations on a visualization that was rendered from CURRENT_VEGA_LITE_SPEC. Treat the spec as canonical and modify it according to the image.
-        - Apply the smallest set of changes necessary.
-        - Do not add unrelated transforms, encodings, scales, and configuration.
+  Treat the spec as canonical and modify it according to the user's annotations in the image.
   
-    Analyze the image and internally determine:
-        - What MARKS are present (point, bar, line, area, text, rule, etc.). There may be multiple mark types.
-        - What VISUAL ENCODINGS are used (x, y, color, size, shape, opacity, tooltip, etc.). Use the COLUMN_NAMES below to infer likely field mappings.
-        - What LAYERS are present (multiple charts superimposed).
-        - What TRANSFORMS are implied (aggregate: sum/mean/count/etc., bin, calculate, filter, regression, window, stack, etc.).
-        - Which of these changes were annotations made by the user to indicate desired modifications, versus existing elements of CURRENT_VEGA_LITE_SPEC that should be preserved.
-    Using these inferred MARKS, ENCODINGS, LAYERS, and TRANSFORMS, reproduce the intended visualization after applying annotations.
+  Analyze the image and internally determine which elements are not present in CURRENT_VEGA_LITE_SPEC and have therefore been added by the user.
+  Reproduce the user's intended visualization by applying the smallest set of changes necessary.
+  Do NOT add unrelated transforms, encodings, scales, and configuration.
+  Do NOT change any elements that have not been annotated by the user.
+  Do NOT duplicate elements that are already present by adding extra layers. Keep the spec as simple as possible, even if it means overwriting some of the existing spec.
+  Do NOT add specification about positions of elements (such as the x and y positions of a title or legend) unless the user has clearly indicated so.
     
-    Respond with ONLY raw JSON, omitting the "data" and "schema" elements. No markdown, explanations, commentary, or surrounding text. 
-    The top-level object must be a valid Vega-Lite specification (excluding "data" and "schema"). 
-    If modification fails, return the original spec unchanged.
-    Never invent field names; only use values from COLUMN_NAMES below.
+  Respond with ONLY raw JSON, omitting the "data" and "schema" elements (those are handled separately). No markdown, explanations, commentary, or surrounding text. 
+  The top-level object must be a valid Vega-Lite specification (excluding "data" and "schema"). 
+  If modification fails, return the original spec unchanged.
+  Never invent field names; only use values from COLUMN_NAMES below.
     
-    COLUMN_NAMES: ${payload.columnNames.length ? payload.columnNames.join(', ') : 'N/A'}
-  `
+  COLUMN_NAMES: ${payload.columnNames.length ? payload.columnNames.join(', ') : 'N/A'}
+`
 
   // Build the Responses API input content array
   const userContent: any[] = [{ type: 'input_text', text: promptText }];
@@ -201,9 +295,9 @@ TASK:
 
 EDITING RULES (for non-empty specs):
 - Apply the smallest possible structural change that satisfies USER_MESSAGE.
-- Preserve unrelated transforms/encodings/scales/config exactly.
-- Do not delete or rewrite major structure unless USER_MESSAGE explicitly requires it.
+- Preserve unrelated transforms/encodings/scales/config as much as possible. Do NOT apply any unnecessary changes that were not specified by the user.
 - Prefer editing existing properties over introducing new layers/transforms.
+- If you introduce layers/transforms to add something new, move the existing top-level view down into the layers to avoid duplicating code.
 - If USER_MESSAGE is ambiguous, choose the smallest change and do not add complexity.
 
 OUTPUT:
