@@ -3,9 +3,13 @@
 	import { writable } from 'svelte/store';
 	import { code } from "$lib/stores/code";
 	import {CanvasToolbar, VersionControlToolbar} from "$lib/components/index";
+	import Fa from 'svelte-fa';
+	import {faSpinner} from "@fortawesome/free-solid-svg-icons/faSpinner";
 
 	// removed exported `spec` prop — CanvasView now reads the `code` store directly via `$code`
 	let selectedTool: 'selector' | 'pen' | 'textbox' | 'eraser' = 'pen';
+
+	export let applying: boolean = false;
 
 	let containerEl: HTMLDivElement | null = null;
 	let contentEl: HTMLDivElement | null = null;
@@ -1029,11 +1033,37 @@
     :global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
         z-index: 100000 !important;
     }
+
+    /* overlay spinner styles */
+    .applying-overlay {
+    	position: absolute;
+    	left: 0;
+    	top: 0;
+    	right: 0;
+    	bottom: 0;
+    	display: flex;
+    	align-items: center;
+    	justify-content: center;
+    	background: rgba(255, 255, 255, 0.8);
+    	pointer-events: all;
+    	z-index: 1000;
+		margin: 20px;
+    }
+
+    .applying-status {
+    	display: flex;
+    	flex-direction: column;
+    	align-items: center;
+    	color: #333;
+    	font-size: 16px;
+    	font-weight: 500;
+    	text-align: center;
+    }
 </style>
 
 <div class="box" style="height:100%; position:relative; display:flex; flex-direction:column;">
 
-	<div class="content" style="flex:1 1 auto; min-height:0; position:relative; z-index:0;" bind:this={contentEl}>
+	<div class="content" style="flex:1 1 auto; min-height:0; position:relative; z-index:0; margin-bottom:0;" bind:this={contentEl}>
 		<div bind:this={containerEl} style="height:100%; width:100%; background:#fff; display:flex; align-items:center; justify-content:center; position:relative; pointer-events:auto; z-index:0;">
 			{#if !$code}
 				<p class="has-text-grey">Vega-Lite visualization preview will render here.</p>
@@ -1047,7 +1077,7 @@
 
 	<!-- Replace canvas with an SVG overlay that renders strokes and texts as DOM elements -->
 	<svg bind:this={svgEl}
-		style="position:absolute; left:0; top:0; right:0; bottom:0; width:100%; height:100%; pointer-events:auto; touch-action:none; z-index:30;"
+		style="position:absolute; left:0; top:0; right:0; bottom:0; width:100%; height:100%; pointer-events:auto; touch-action:none; margin: 20px; z-index:30;"
 		on:pointerdown={pointerDown}
 		on:pointermove={pointerMove}
 		on:pointerup={pointerUp}
@@ -1136,6 +1166,16 @@
  				{/if}
  			{/each}
  		</div>
+
+ 		<!-- Applying overlay with spinner and status text -->
+ 		{#if applying}
+ 			<div class="applying-overlay" aria-live="polite" aria-busy="true">
+ 				<div class="applying-status">
+ 					<Fa icon={faSpinner} spin />
+ 					<span>Applying changes, please wait...</span>
+ 				</div>
+ 			</div>
+ 		{/if}
 
 
 </div>

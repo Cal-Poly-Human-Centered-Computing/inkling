@@ -3,12 +3,15 @@
 	import { createEventDispatcher } from 'svelte';
 	import {faRotateLeft} from "@fortawesome/free-solid-svg-icons/faRotateLeft";
 	import {faCodeMerge} from "@fortawesome/free-solid-svg-icons/faCodeMerge";
+	import {faSpinner} from "@fortawesome/free-solid-svg-icons/faSpinner";
 	const dispatch = createEventDispatcher();
 
 	export let canApply: boolean = false;
 	export let canRollback: boolean = false;
+	export let applying: boolean = false;
 
 	function applyChanges() {
+		if (applying) return; // guard
 		dispatch('applyChanges');
 	}
 
@@ -27,11 +30,15 @@
 			</span>
 			<span>Rollback</span>
 		</button>
-		<button class="button is-info toolbar-button" aria-label="Apply changes" on:click={applyChanges} disabled="{!canApply}">
+		<button class="button is-info toolbar-button" aria-label="Apply changes" on:click={applyChanges} disabled="{!canApply || applying}">
 			<span class="icon toolbar-icon">
-				<Fa icon={faCodeMerge} />
+				{#if applying}
+					<Fa icon={faSpinner} spin />
+				{:else}
+					<Fa icon={faCodeMerge} />
+				{/if}
 			</span>
-			<span>Apply Changes</span>
+			<span>{#if applying}Applying...{:else}Apply Changes{/if}</span>
 		</button>
 	</div>
 </div>

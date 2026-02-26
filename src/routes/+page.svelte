@@ -214,12 +214,12 @@
       <!-- VersionControlToolbar -->
       <div style="flex:0 0 auto;">
         <VersionControlToolbar on:applyChanges={handleApplyChanges} on:rollbackChanges={handleRollbackChanges}
-                               canApply={historyIndex >= 1} canRollback={historyStacks.length >= 1}/>
+                               canApply={historyIndex >= 1} canRollback={historyStacks.length >= 1} applying={applying} />
       </div>
 
       <!-- Canvas / visualization area -->
       <div style="flex:1 1 auto; min-height:0;">
-        <CanvasView bind:this={canvasViewRef} bind:historyIndex={historyIndex} bind:historyStacks={historyStacks} />
+        <CanvasView bind:this={canvasViewRef} bind:historyIndex={historyIndex} bind:historyStacks={historyStacks} applying={applying} />
       </div>
     </div>
   </div>
