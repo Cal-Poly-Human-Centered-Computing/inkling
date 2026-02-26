@@ -164,26 +164,41 @@ export async function applyChanges(payload: any): Promise<string> {
 
   const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
 
-  const promptText = `The attached image contains an overlay of the user's annotations on a visualization that was rendered from the following CURRENT_VEGA_LITE_SPEC.
-  
-  CURRENT_VEGA_LITE_SPEC:
-  ${currentSpec}
-  
-  Treat the spec as canonical and modify it according to the user's annotations in the image.
-  
-  Analyze the image and internally determine which elements are not present in CURRENT_VEGA_LITE_SPEC and have therefore been added by the user.
-  Reproduce the user's intended visualization by applying the smallest set of changes necessary.
-  Do NOT add unrelated transforms, encodings, scales, and configuration.
-  Do NOT change any elements that have not been annotated by the user.
-  Do NOT duplicate elements that are already present by adding extra layers. Keep the spec as simple as possible, even if it means overwriting some of the existing spec.
-  Do NOT add specification about positions of elements (such as the x and y positions of a title or legend) unless the user has clearly indicated so.
-    
-  Respond with ONLY raw JSON, omitting the "data" and "schema" elements (those are handled separately). No markdown, explanations, commentary, or surrounding text. 
-  The top-level object must be a valid Vega-Lite specification (excluding "data" and "schema"). 
-  If modification fails, return the original spec unchanged.
-  Never invent field names; only use values from COLUMN_NAMES below.
-    
-  COLUMN_NAMES: ${payload.columnNames.length ? payload.columnNames.join(', ') : 'N/A'}
+  const promptText = `You will update an existing Vega-Lite specification based on annotations that the user drew on top of a rendered sketch of that spec.
+
+OVERVIEW:
+- The attached image shows the CURRENT_VEGA_LITE_SPEC rendering plus the user's annotations (pen strokes and/or typed text).
+- Treat CURRENT_VEGA_LITE_SPEC as canonical. Only change fields that the annotations clearly instruct.
+- Respond with ONLY raw JSON (no markdown/text) and omit "data" and "$schema"/"schema". The top-level object must be a valid Vega-Lite spec (excluding "data" and "schema").
+
+INPUTS:
+COLUMN_NAMES: ${payload.columnNames.length ? payload.columnNames.join(", ") : "N/A"}
+CURRENT_VEGA_LITE_SPEC:
+${currentSpec}
+USER_ANNOTATION_IMAGE: (attached)
+
+DETERMINE USER INTENT FROM IMAGE:
+- Internally detect added/edited visual elements present in the image but not present in CURRENT_VEGA_LITE_SPEC.
+- Do NOT assume the user changed a property unless the annotation explicitly indicates it.
+- If the annotation is ambiguous, prefer making the smallest change that could implement it (see EDITING RULES).
+
+EDITING RULES:
+- Do NOT regenerate or replace the whole spec. Do NOT reset values that exist in CURRENT_VEGA_LITE_SPEC unless the annotation **explicitly** indicates that those fields should change.
+- Any encoding/transform/filter/calculate that references a field MUST exactly match one of COLUMN_NAMES. Never invent new field names.
+- If a property exists and the annotation implies a change, edit that property. If it doesn't exist, add it in the smallest scope consistent with Vega-Lite semantics.
+- Do NOT add or modify keys that specify pixel positions (x/y coordinates of title/legend) unless the user explicitly annotated exact placements.
+
+PROCESS (how to implement edits):
+- Compare CURRENT_VEGA_LITE_SPEC -> produce a minimal patch:
+  1. Compute set of changed visual intents from the image (title, new mark, aggregate line, legend change, etc).
+  2. For each intent, edit the *smallest* relevant key(s) only.
+  3. If you introduce layers/transforms to add something new, move the existing top-level view down into the layers to avoid duplicating code. When possible hoist shared encodings (e.g., \`x\` field/type) to top-level \`encoding\`.
+- Preserve unrelated blocks (transforms, filters, existing scales/config) exactly as they appear unless annotation targets them.
+
+FINAL CHECKS (must pass):
+- Do NOT invent new field names and only use COLUMN_NAMES for data fields.
+- Do NOT output invalid JSON.
+- If you cannot confidently apply the annotation without violating constraints, return CURRENT_VEGA_LITE_SPEC unchanged.
 `
 
   // Build the Responses API input content array

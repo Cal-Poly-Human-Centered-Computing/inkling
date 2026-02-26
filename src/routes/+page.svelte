@@ -11,6 +11,8 @@
   let applying = false;
   let showRollbackConfirmationModal = false;
 
+  let renderedVisPresent = false; // track whether we've rendered a spec yet to determine if "apply changes" should do sketch-to-spec or spec update
+
   let historyStacks: Array<Array<string>> = [];
   let historyIndex: -1;
 
@@ -87,20 +89,20 @@
         if (canvasViewRef && typeof canvasViewRef.exportCanvasDataUrl === 'function') {
           dataUrl = await canvasViewRef.exportCanvasDataUrl('image/png', undefined, window.devicePixelRatio ?? 1);
           // robust preview: try writing into a new blank tab; fallback to blob URL if write fails
-          if (dataUrl) {
-            const opened = openImageInNewTab(dataUrl);
-            if (!opened) {
-              try {
-                const blob = dataUrlToBlob(dataUrl);
-                const url = URL.createObjectURL(blob);
-                try { window.open(url, '_blank'); } catch (err) { /* ignore */ }
-                // revoke after a short delay
-                setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 10000);
-              } catch (err) {
-                console.error('Blob fallback failed:', err);
-              }
-            }
-          }
+          // if (dataUrl) {
+          //   const opened = openImageInNewTab(dataUrl);
+          //   if (!opened) {
+          //     try {
+          //       const blob = dataUrlToBlob(dataUrl);
+          //       const url = URL.createObjectURL(blob);
+          //       try { window.open(url, '_blank'); } catch (err) { /* ignore */ }
+          //       // revoke after a short delay
+          //       setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 10000);
+          //     } catch (err) {
+          //       console.error('Blob fallback failed:', err);
+          //     }
+          //   }
+          // }
         }
       } catch (err) {
         console.error('Failed to export canvas image:', err);
@@ -109,11 +111,9 @@
         return;
       }
 
-      const renderedVisPresent = canvasViewRef.baseSvg != null;
-
       let resp;
 
-      if (renderedVisPresent) {
+      if (canvasViewRef.renderedVisPresent()) {
         const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), convId: get(convIdStore), columnNames: getColumnNames() };
         resp = await fetch('/api/apply-changes', {
           method: 'POST',
@@ -122,6 +122,7 @@
         });
       } else {
         const bodyPayload: any = { image: dataUrl, convId: get(convIdStore), columnNames: getColumnNames() };
+        console.log(bodyPayload)
         resp = await fetch('/api/sketch-to-spec', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -881,6 +881,10 @@
         } catch (err) { /* ignore */ }
     }
 
+	export function renderedVisPresent() {
+		return !!baseSvg;
+	}
+
 	/**
 	 * Export the current canvas (vega visualization + SVG overlays) to a base64 data URL.
 	 * Commits any active text editing before export so the SVG overlay contains the current text.
