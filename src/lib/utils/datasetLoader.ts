@@ -78,11 +78,12 @@ export function serializeDataFrame(df: any): SerializedDataset | undefined {
 }
 
 /**
- * Load JSON from a URL into a danfo DataFrame when possible. Returns df + column names + serialized payload.
+ * Load JSON or CSV from a URL into a danfo DataFrame when possible. Returns df + column names + serialized payload.
  * Behavior:
- *  - dynamically imports danfojs and attempts `dfd.readJSON(url)` if available
- *  - on failure, falls back to fetch(url).json() then `new dfd.DataFrame(data)` if possible
- *  - if danfo isn't available or DataFrame can't be constructed, `df` may be the raw JSON
+ *  - determine resource type by URL extension and Content-Type header
+ *  - dynamically imports danfojs and attempts `dfd.readJSON/readCSV(url)` if available
+ *  - on failure, falls back to fetch(url).json() or fetch(url).text() then parsing
+ *  - if danfo isn't available or DataFrame can't be constructed, `df` may be the raw JSON/array
  */
 export async function loadDatasetFromUrl(url: string): Promise<LoadedDataset> {
   if (!url) throw new Error('Invalid URL');
@@ -91,48 +92,62 @@ export async function loadDatasetFromUrl(url: string): Promise<LoadedDataset> {
   let raw: any = null;
   let df: any = null;
 
-  // attempt to import danfojs; if this fails we'll still try to fetch JSON
+  // helper to detect extension
+  const urlLower = url.split('?')[0].toLowerCase();
+  const ext = urlLower.endsWith('.csv') ? 'csv' : urlLower.endsWith('.json') ? 'json' : undefined;
+
+  // attempt to import danfojs; if this fails we'll still try to fetch
   try {
     dfd = await importDanfo();
   } catch (err) {
-    // import failure -> log and continue (we'll rely on fetch + raw JSON)
-    // consumer can decide how to handle missing danfo dependency
-    // console.warn('datasetLoader: failed to import danfojs', err);
+    // import failure -> log and continue
+    dfd = null;
   }
 
-  // Try danfo's readJSON first if available
-  if (dfd && typeof dfd.readJSON === 'function') {
+  // If danfo is present, prefer its readers based on extension when possible
+  if (dfd) {
     try {
-      raw = await dfd.readJSON(url);
-      // readJSON often returns a DataFrame instance
-      df = raw;
-    } catch (err) {
-      // readJSON failed (CORS, network, or runtime) -> we'll fall back to fetch below
-      raw = null;
-    }
-  }
-
-  // If we don't have raw data yet, fetch JSON explicitly
-  if (!df) {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`Network error: ${resp.status} ${resp.statusText}`);
-    raw = await resp.json();
-
-    // try to construct a DataFrame if danfo is available
-    if (dfd && typeof dfd.DataFrame === 'function') {
-      try {
-        df = new dfd.DataFrame(raw);
-      } catch (err) {
-        // construction failed; keep df as null and leave raw as-is
-        df = null;
+      // If extension is known CSV and readCSV exists
+      if (ext === 'csv' && typeof dfd.readCSV === 'function') {
+        raw = await dfd.readCSV(url);
+        df = raw;
       }
+      // If extension is known JSON and readJSON exists
+      else if (ext === 'json' && typeof dfd.readJSON === 'function') {
+        raw = await dfd.readJSON(url);
+        df = raw;
+      }
+      // If extension unknown, try readJSON then readCSV fallbacks
+      else if (typeof dfd.readJSON === 'function') {
+        try {
+          raw = await dfd.readJSON(url);
+          df = raw;
+        } catch (err) {
+          // try CSV
+          if (typeof dfd.readCSV === 'function') {
+            try {
+              raw = await dfd.readCSV(url);
+              df = raw;
+            } catch (err2) {
+              raw = null;
+              df = null;
+            }
+          }
+        }
+      } else if (typeof dfd.readCSV === 'function') {
+        try {
+          raw = await dfd.readCSV(url);
+          df = raw;
+        } catch (err) {
+          raw = null;
+          df = null;
+        }
+      }
+    } catch (err) {
+      // any reader errors -> we'll fall back to fetch below
+      raw = null;
+      df = null;
     }
-  }
-
-  // If df is still null, but raw resembles a DataFrame-like object (some danfo builds may return plain objects), try to detect
-  if (!df && raw && ((raw as any).data || (raw as any).values || (raw as any).columnNames)) {
-    // keep raw as-is; extract columns heuristically
-    df = raw;
   }
 
   const columns = extractColumns(df ?? raw ?? undefined);
