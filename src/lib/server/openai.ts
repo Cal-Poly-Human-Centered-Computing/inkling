@@ -69,7 +69,6 @@ export async function sketchToSpec(payload: any): Promise<string> {
         - What VISUAL ENCODINGS are used (x, y, color, size, shape, opacity, tooltip, etc.). Use the COLUMN_NAMES below to infer likely field mappings.
         - What LAYERS are present (multiple charts superimposed).
         - What TRANSFORMS are implied (aggregate: sum/mean/count/etc., bin, calculate, filter, regression, window, stack, etc.).
-        - Which of these changes were annotations made by the user to indicate desired modifications, versus existing elements of CURRENT_VEGA_LITE_SPEC that should be preserved.
     Using these inferred MARKS, ENCODINGS, LAYERS, and TRANSFORMS, generate the simplest possible corresponding Vega-Lite spec to reproduce the visualization.
     
     Respond with ONLY raw JSON, omitting the "data" and "schema" elements (those are handled separately). No markdown, explanations, commentary, or surrounding text. 

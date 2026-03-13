@@ -2,6 +2,9 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { json } from '@sveltejs/kit';
 import { applyChanges } from '$lib/server/openai';
 
+/**
+ * Endpoint to apply the annotations the user has made to a rendered visualization, and return the updated Vega-Lite spec
+ */
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json().catch(() => ({}));
@@ -18,7 +21,6 @@ export const POST: RequestHandler = async ({ request }) => {
       convId = body.convId
     }
 
-    // Forward only the image URL (or null) to the generateChanges helper
     const result = await applyChanges({ convId, image: imageUrl, currentSpec, columnNames });
     return json({ ok: true, result });
   } catch (err) {
