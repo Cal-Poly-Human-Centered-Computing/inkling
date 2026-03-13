@@ -2,6 +2,8 @@
 	import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
 	import Fa from 'svelte-fa';
 	import { faUpload, faDatabase } from '@fortawesome/free-solid-svg-icons';
+	import { faCopy } from '@fortawesome/free-solid-svg-icons/faCopy';
+	import { faCheck } from '@fortawesome/free-solid-svg-icons/faCheck';
 	import { code as codeStore } from '$lib/stores/code';
 	import {get} from "svelte/store";
 	import { EditorState, StateEffect, StateField } from '@codemirror/state';
@@ -18,6 +20,53 @@
 	let editorMounted = false;
 	let editorView: any = null;
 	let containerPointerHandler: ((e: PointerEvent) => void) | null = null;
+
+	// copy button state
+	let copied = false;
+
+	/**
+	 * Copy the full spec (stored in `codeStore`) to the clipboard.
+	 * Uses navigator.clipboard when available, with a textarea fallback.
+	 */
+	async function copyToClipboard() {
+	    const text = String(get(codeStore) || '');
+	    try {
+	        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+	            await navigator.clipboard.writeText(text);
+	        } else {
+	            throw new Error('Clipboard API not available');
+	        }
+	    } catch (err) {
+	        // Fallback: use an existing fallback textarea if present, otherwise create a temporary one
+	        let ta = textareaFallback as HTMLTextAreaElement | null;
+	        let created = false;
+	        if (!ta) {
+	            created = true;
+	            ta = document.createElement('textarea');
+	            ta.value = text;
+	            // keep off-screen and invisible but selectable
+	            ta.style.position = 'fixed';
+	            ta.style.left = '-9999px';
+	            ta.style.top = '0';
+	            ta.style.opacity = '0';
+	            document.body.appendChild(ta);
+	        } else {
+	            ta.value = text;
+	        }
+	        try {
+	            ta.focus();
+	            ta.select();
+	            document.execCommand('copy');
+	        } catch (e) {
+	            // swallow
+	        }
+	        if (created && ta && ta.parentNode) ta.parentNode.removeChild(ta);
+	    }
+
+	    copied = true;
+	    setTimeout(() => { copied = false; }, 1500);
+	    dispatch('copied');
+	}
 
 	// upload modal state
 	let showUploadModal = false;
@@ -635,10 +684,21 @@ ${indentedInner}
 		</button>
 	</div>
 
-	<div bind:this={editorContainer} class="content" style="flex:1 1 auto; min-height:0; border:1px solid #eaeaea;">
+	<div bind:this={editorContainer} class="content" style="flex:1 1 auto; min-height:0; border:1px solid #eaeaea; position:relative;">
 		{#if !editorMounted}
 			<textarea bind:this={textareaFallback} class="textarea code-fallback" bind:value={fallbackValue} on:input={onFallbackInput} aria-label="Vega-Lite editor fallback" style="height:100%; width:100%; overflow:auto; white-space:pre; resize:none;"></textarea>
 		{/if}
+
+		<!-- Copy button placed in the editor overlay (top-right). Visible on hover or when editor has focus. -->
+		<button class="copy-button" type="button" aria-label={copied ? 'Copied' : 'Copy code'} title={copied ? 'Copied' : 'Copy'} on:click={copyToClipboard}>
+			<span class="icon is-small">
+				{#if copied}
+					<Fa icon={faCheck} />
+				{:else}
+					<Fa icon={faCopy} />
+				{/if}
+			</span>
+		</button>
 	</div>
 </div>
 
@@ -864,6 +924,45 @@ ${indentedInner}
 	  box-sizing: border-box;
 	  overflow: hidden;
   }
+
+  /* Copy button styles: positioned top-right inside .content and visible on hover/focus */
+  .content {
+    position: relative; /* ensure overlay positioning context */
+  }
+  .copy-button {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 60;
+    border-radius: 6px;
+    padding: 0.35rem 0.45rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.9);
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    cursor: pointer;
+    transition: opacity 160ms ease, transform 160ms ease;
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+  }
+  .copy-button:focus {
+    outline: 2px solid rgba(0,0,0,0.12);
+  }
+  .content:hover .copy-button,
+  .content:focus-within .copy-button,
+  .copy-button:focus {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .copy-button .icon { width: 1rem; height: 1rem; }
+  .copy-button[title="Copied"] {
+    background: rgba(22,163,74,0.95);
+    border-color: rgba(22,163,74,0.9);
+    color: white;
+  }
+
 </style>
-
-
