@@ -312,7 +312,7 @@ EDITING RULES (for non-empty specs):
 - Apply the smallest possible structural change that satisfies USER_MESSAGE.
 - Preserve unrelated transforms/encodings/scales/config as much as possible. Do NOT apply any unnecessary changes that were not specified by the user.
 - Prefer editing existing properties over introducing new layers/transforms.
-- If you introduce layers/transforms to add something new, move the existing top-level view down into the layers to avoid duplicating code.
+- If you introduce layers/transforms/concatenation to add something new, move the existing top-level view down into the layers to avoid duplicating code.
 - If USER_MESSAGE is ambiguous, choose the smallest change and do not add complexity.
 
 OUTPUT:
