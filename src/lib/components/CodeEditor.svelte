@@ -7,12 +7,22 @@
 	import { code as codeStore } from '$lib/stores/code';
 	import {get} from "svelte/store";
 	import { EditorState, StateEffect, StateField } from '@codemirror/state';
-	import {EditorView, keymap, Decoration, WidgetType, ViewPlugin} from '@codemirror/view';
+	import {
+		EditorView,
+		keymap,
+		Decoration,
+		WidgetType,
+		ViewPlugin,
+		gutter,
+		highlightActiveLineGutter
+	} from '@codemirror/view';
+	import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
 	import { json } from '@codemirror/lang-json';
 	import {defaultKeymap, history, historyKeymap, indentLess, indentMore} from "@codemirror/commands";
 	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
 	import {getColumnNames, getDataToken, getFirstRow, setDatasetFromDfd} from "$lib/utils/datasetStore";
 	import { conversationId as convIdStore } from '$lib/stores/conversationId';
+	import {bracketMatching, syntaxHighlighting} from "@codemirror/language";
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -86,7 +96,7 @@
 	let helpPopoverEl: HTMLDivElement | null = null;
 
 	// hold canonical schema and data enforced into any incoming spec
-	const schema = "https://vega.github.io/schema/vega-lite/v5.json";
+	const schema = "https://vega.github.io/schema/vega-lite/v6.json";
 	let data: any = null;
 
 	let innerSpecBeforeAppliedChanges: string = ''
@@ -396,11 +406,13 @@ ${indentedInner}
 }`;
 	}
 
-	function createNewEditorState(innerSpec: string) {
+	async function createNewEditorState(innerSpec: string) {
+		const { jsonSchema } = await import('codemirror-json-schema');
+		const vegaLiteSchema = await (await fetch(schema)).json();
 		return EditorState.create({
 			doc: innerSpec,
 			extensions: [
-				json(),
+				jsonSchema(vegaLiteSchema),
 				// Theme to make editor fill container and allow scrolling
 				EditorView.theme({
 					'&': { height: '100%', display: 'flex', flexDirection: 'column' },
@@ -409,6 +421,10 @@ ${indentedInner}
 					'.cm-gutters': { flex: '0 0 auto' }
 				}),
 				history(),
+				gutter({ class: "CodeMirror-lint-markers" }),
+				bracketMatching(),
+				highlightActiveLineGutter(),
+				syntaxHighlighting(oneDarkHighlightStyle),
 				keymap.of([
 					...historyKeymap,
 					{ key: 'Tab', run: indentMore },
@@ -439,7 +455,7 @@ ${indentedInner}
 			replaceTopLevelDataValue(data.url);
 		}
 
-		const state = createNewEditorState(extractInnerSpecFromFull(get(codeStore)));
+		const state = await createNewEditorState(extractInnerSpecFromFull(get(codeStore)));
 
 		editorView = new EditorView({
 			state,
@@ -497,7 +513,7 @@ ${indentedInner}
 		if (editorMounted && editorView) {
 			// compute inner spec and dispatch to replace editor content
 			const inner = extractInnerSpecFromFull(finalString);
-			const newState = createNewEditorState(inner);
+			const newState = await createNewEditorState(inner);
 			editorView.setState(newState)
 
 			editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: inner }, effects: setHeaderMeta.of({ schema, data }) });
@@ -515,7 +531,7 @@ ${indentedInner}
 	export async function rollbackChanges() {
 		console.log(innerSpecBeforeAppliedChanges)
 		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: innerSpecBeforeAppliedChanges }, effects: setHeaderMeta.of({ schema, data }) });
-		const newState = createNewEditorState(innerSpecBeforeAppliedChanges);
+		const newState = await createNewEditorState(innerSpecBeforeAppliedChanges);
 		editorView.setState(newState)
 		innerSpecBeforeAppliedChanges = '';
 	}
