@@ -7,12 +7,23 @@
 	import { code as codeStore } from '$lib/stores/code';
 	import {get} from "svelte/store";
 	import { EditorState, StateEffect, StateField } from '@codemirror/state';
-	import {EditorView, keymap, Decoration, WidgetType, ViewPlugin} from '@codemirror/view';
+	import {
+		EditorView,
+		keymap,
+		Decoration,
+		WidgetType,
+		ViewPlugin,
+		gutter,
+		highlightActiveLineGutter
+	} from '@codemirror/view';
+	import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
 	import { json } from '@codemirror/lang-json';
 	import {defaultKeymap, history, historyKeymap, indentLess, indentMore} from "@codemirror/commands";
 	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
 	import {getColumnNames, getDataToken, getFirstRow, setDatasetFromDfd} from "$lib/utils/datasetStore";
 	import { conversationId as convIdStore } from '$lib/stores/conversationId';
+	import {bracketMatching, syntaxHighlighting} from "@codemirror/language";
+	import readOnlyRangesExtension from "codemirror-readonly-ranges";
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -86,321 +97,82 @@
 	let helpPopoverEl: HTMLDivElement | null = null;
 
 	// hold canonical schema and data enforced into any incoming spec
-	const schema = "https://vega.github.io/schema/vega-lite/v5.json";
+	const schema = "https://vega.github.io/schema/vega-lite/v6.json";
 	let data: any = null;
 
-	let innerSpecBeforeAppliedChanges: string = ''
+	let specBeforeAppliedChanges: string = ''
 
-	// Effect to update header meta (schema + data) in editor state
-	const setHeaderMeta = StateEffect.define();
+	function getReadonlyText() {
+		let str = JSON.stringify({"$schema": schema, "data": data}, null, "  ");
 
-	type HeaderMeta = { schema: string; data: any };
+		str = str.slice(0, -2) + ',\n  \n}'; // remove closing brace and re-add with extra space for user edits
 
-	const headerMetaField: any = StateField.define({
-		create(): HeaderMeta | null {
-			return buildHeaderMeta();
-		},
-		update(value: HeaderMeta | null, tr: any) {
-			for (const e of tr.effects) {
-				if (e.is(setHeaderMeta)) return e.value;
+		return str;
+	}
+
+	const getReadOnlyRanges = (targetState: any):Array<{from:number|undefined, to:number|undefined}> => {
+		const doc = targetState.doc;
+		const headerEndLine = Math.min(5, doc.lines);
+		return [
+			{
+				from: 0,
+				to: doc.line(headerEndLine).to
+			},
+			{
+				from: doc.line(doc.lines).from,
+				to: undefined // same as targetState.doc.line(targetState.doc.lines).to
 			}
-			return value;
-		}
-	});
-
-	class HeaderWidget extends WidgetType {
-		_meta: { schema: string; data: any } | null;
-		constructor(meta: { schema: string; data: any } | null) {
-			super();
-			this._meta = meta;
-		}
-		toDOM() {
-			const el = document.createElement('div');
-			el.className = 'cm-editor-header';
-			el.style.pointerEvents = 'none';
-
-			const span = document.createElement('span');
-			span.className = 'cm-editor-header-text';
-			// render opening brace, schema and a compact data preview (no leading spaces; padding handled by CSS)
-			const schemaText = this._meta?.schema ? `"$schema": ${JSON.stringify(this._meta.schema)}` : '';
-			let dataPreview = '"data": null';
-			try {
-				if (this._meta?.data) {
-					if (typeof this._meta.data === 'string') dataPreview = `"data": ${JSON.stringify(this._meta.data)}`;
-					else dataPreview = `"data": ${JSON.stringify(this._meta.data, null, 2)}`;
-				}
-			} catch (e) {}
-
-			const schemaBlock = schemaText ? indentLines(schemaText) : '';
-			const dataBlock = indentLines(dataPreview);
-			span.textContent = '{\n' + (schemaBlock ? schemaBlock + ',\n' : '') + dataBlock + ',';
-
-			el.appendChild(span);
-			return el;
-		}
-		ignoreEvent() { return true; }
+		]
 	}
 
-
-	class FooterWidget extends WidgetType {
-		constructor() { super(); }
-		toDOM() {
-			const el = document.createElement('div');
-			el.className = 'cm-editor-footer';
-			el.style.pointerEvents = 'none';
-			el.textContent = '}';
-			return el;
-		}
-		ignoreEvent() { return true; }
-	}
-
-	const headerFooterPlugin = ViewPlugin.fromClass(class {
+	// Decoration plugin: apply the `readonly-text` class to the first five lines
+	// and to the last line of the document. This is purely visual and complements the
+	// `readOnlyRangesExtension` (which enforces read-only behavior).
+	const headerFooterLineDecoration = ViewPlugin.fromClass(class {
 		decorations: any;
 		constructor(view: any) { this.decorations = this.buildDeco(view); }
-		update(update: any) { if (update.docChanged || update.viewportChanged || update.startState.field(headerMetaField) !== update.state.field(headerMetaField)) this.decorations = this.buildDeco(update.view); }
+		update(update: any) {
+			if (update.docChanged || update.viewportChanged) this.decorations = this.buildDeco(update.view);
+		}
 		buildDeco(view: any) {
-			const meta = view.state.field(headerMetaField);
-			const widgets: any[] = [];
-			widgets.push(Decoration.widget({ widget: new HeaderWidget(meta), side: -1 }).range(0));
-			widgets.push(Decoration.widget({ widget: new FooterWidget(), side: 1 }).range(view.state.doc.length));
-			return Decoration.set(widgets, true);
-		}
-	}, { decorations: (v: any) => v.decorations });
-
-	// Helper function to normalize any internal indentation so all lines get a consistent prefix
-	function indentLines(s: string, prefix = '  ') {
-		if (!s) return '';
-		// compute depth at the start of each line by scanning the string once
-		const depths: number[] = [];
-		let depth = 0;
-		let inStr = false;
-		let quote = '';
-		let lineIdx = 0;
-		depths[0] = 0;
-		for (let i = 0; i < s.length; i++) {
-			const c = s[i];
-			if (inStr) {
-				if (c === '\\') { i++; continue; }
-				if (c === quote) { inStr = false; quote = ''; }
-			} else {
-				if (c === '"' || c === "'") { inStr = true; quote = c; }
-				else if (c === '{' || c === '[') { depth++; }
-				else if (c === '}' || c === ']') { depth = Math.max(0, depth - 1); }
-			}
-			if (c === '\n') { lineIdx++; depths[lineIdx] = depth; }
-		}
-
-		const lines = s.split('\n');
-		return lines.map((line, idx) => {
-			const rest = line.trimStart();
-			if (idx === 0) {
-				return prefix + rest;
-			}
-			const depthAtStart = depths[idx] ?? 0;
-			// if the line starts with a closing brace/bracket, it should be one level less indented
-			const firstChar = rest.charAt(0);
-			const effectiveDepth = (firstChar === '}' || firstChar === ']') ? Math.max(0, depthAtStart - 1) : depthAtStart;
-			const indent = prefix.repeat(1 + effectiveDepth);
-			return indent + rest;
-		}).join('\n');
-	}
-
-	// Helper: extract a value token starting at index and return { value, endIdx }
-	function extractValueFromIndex(startIdx: number, text: string): { value: string; endIdx: number } {
-		let idx = startIdx;
-		// skip whitespace
-		while (idx < text.length && /\s/.test(text[idx])) idx++;
-		if (idx >= text.length) return { value: '', endIdx: idx };
-
-		const ch = text[idx];
-		// Quoted string
-		if (ch === '"' || ch === "'") {
-			const q = ch;
-			idx++;
-			let out = '';
-			let escaped = false;
-			while (idx < text.length) {
-				const c = text[idx++];
-				if (escaped) { out += c; escaped = false; continue; }
-				if (c === '\\') { escaped = true; continue; }
-				if (c === q) break;
-				out += c;
-			}
-			return { value: out, endIdx: idx };
-		}
-
-		// Object or array: parse balanced braces/brackets (skip strings inside)
-		if (ch === '{' || ch === '[') {
-			const open = ch;
-			const close = open === '{' ? '}' : ']';
-			let depthInner = 0;
-			let start = idx;
-			while (idx < text.length) {
-				const c = text[idx];
-				if (c === '"' || c === "'") {
-					const innerQ = c; idx++;
-					while (idx < text.length) {
-						const cc = text[idx++];
-						if (cc === '\\') { idx++; continue; }
-						if (cc === innerQ) break;
-					}
-					continue;
-				}
-				if (c === open) depthInner++;
-				else if (c === close) {
-					depthInner--;
-					if (depthInner === 0) { idx++; break; }
-				}
-				idx++;
-			}
-			const slice = text.slice(start, idx).trim();
-			return { value: slice, endIdx: idx };
-		}
-
-		// Primitive - read until comma or closing brace/bracket
-		const primStart = idx;
-		while (idx < text.length && !/[,\}\]\n\r]/.test(text[idx])) idx++;
-		const prim = text.slice(primStart, idx).trim();
-		return { value: prim.replace(/^,|,$/g, ''), endIdx: idx };
-	}
-
-	/**
-	 * Extract the "inner" spec portion from a full top-level JSON text.
-	 * If the top-level is an object, remove $schema and data keys and return
-	 * the pretty-printed remainder (or empty object "{}" if nothing left).
-	 * If parsing fails, try to return any _user_raw content, or fallback to '{}'.
-	 *
-	 * NOTE: updated to NOT attempt JSON.parse because the inner spec may not be
-	 * valid JSON. This implementation scans the text, finds the top-level
-	 * object bounds, locates the `$schema` and `data` members in order, and
-	 * returns the raw substring that represents the "inner" spec that follows
-	 * the `data` value. If nothing remains, returns an empty string.
-	 */
-	function extractInnerSpecFromFull(fullText: string): string {
-		const text = String(fullText || '');
-		const firstBrace = text.indexOf('{');
-		if (firstBrace === -1) return '';
-
-		// find matching top-level closing brace by scanning (skip strings)
-		let i = firstBrace;
-		let depth = 0;
-		let inStr = false;
-		let quote = '';
-		for (; i < text.length; i++) {
-			const c = text[i];
-			if (inStr) {
-				if (c === '\\') { i++; continue; }
-				if (c === quote) { inStr = false; quote = ''; }
-			} else {
-				if (c === '"' || c === "'") { inStr = true; quote = c; }
-				else if (c === '{' || c === '[') { depth++; }
-				else if (c === '}' || c === ']') {
-					depth--;
-					if (depth === 0) { i++; break; }
+			const decos: any[] = [];
+			const seen = new Set<string>();
+			const doc = view.state.doc;
+			const maxHeader = Math.min(5, doc.lines);
+			for (let i = 1; i <= maxHeader; i++) {
+				const line = doc.line(i);
+				const from = line.from, to = line.to;
+				const key = `${from}-${to}`;
+				if (!seen.has(key)) {
+					seen.add(key);
+					decos.push(Decoration.mark({ class: 'readonly-text' }).range(from, to));
 				}
 			}
-		}
-		const topEnd = i; // index after the top-level closing brace
 
-		let pos = firstBrace + 1;
-		const parts: string[] = [];
-
-		while (pos < topEnd - 1) {
-			// skip whitespace and commas between properties
-			while (pos < topEnd - 1 && /[\s,]/.test(text[pos])) pos++;
-			if (pos >= topEnd - 1) break;
-			const propStart = pos;
-
-			// read key (quoted or unquoted)
-			let key = '';
-			if (text[pos] === '"' || text[pos] === "'") {
-				const q = text[pos++];
-				let k = '';
-				let escaped = false;
-				while (pos < topEnd) {
-					const ch = text[pos++];
-					if (escaped) { k += ch; escaped = false; continue; }
-					if (ch === '\\') { escaped = true; continue; }
-					if (ch === q) break;
-					k += ch;
+			// Last line
+			if (doc.lines >= 1) {
+				const lastLine = doc.line(doc.lines);
+				const from = lastLine.from, to = lastLine.to;
+				const key = `${from}-${to}`;
+				if (!seen.has(key)) {
+					seen.add(key);
+					decos.push(Decoration.mark({ class: 'readonly-text' }).range(from, to));
 				}
-				key = k;
-			} else {
-				// tolerant: read until colon (trim whitespace)
-				const keyStart = pos;
-				while (pos < topEnd && text[pos] !== ':' && !/[\n\r]/.test(text[pos])) pos++;
-				key = text.slice(keyStart, pos).trim();
 			}
 
-			// find colon (skip whitespace)
-			while (pos < topEnd && /\s/.test(text[pos])) pos++;
-			if (pos >= topEnd || text[pos] !== ':') break; // malformed — bail out
-			const colonIdx = pos;
-			// use helper to read the value token (expects start index after colon)
-			const { endIdx } = extractValueFromIndex(colonIdx + 1, text);
-			let propEnd = endIdx;
-			// include any trailing whitespace and a single trailing comma
-			while (propEnd < topEnd && /\s/.test(text[propEnd])) propEnd++;
-			if (propEnd < topEnd && text[propEnd] === ',') propEnd++;
-
-			const rawProp = text.slice(propStart, propEnd).trim();
-			if (key !== '$schema' && key !== 'data') {
-				parts.push(rawProp);
-			}
-
-			pos = propEnd;
+			return Decoration.set(decos, true);
 		}
+	}, {
+		decorations: (v: any) => v.decorations
+	});
 
-		if (parts.length === 0) return '  ';
-		// preserve original relative order and return joined properties
-		let unindented_block = parts.join('\n');
-
-		return indentLines(unindented_block);
-	}
-
-	function buildHeaderMeta(): { schema: string; data: any } {
-		return { schema: schema, data: data };
-	}
-
-	/**
-	 * Compose a full JSON text from the editor's inner spec text, injecting
-	 * the enforced $schema and current data value.
-	 */
-	function composeFullFromInner(innerText: string): string {
-		// Treat innerText as raw text (do not parse it). Inject $schema and data
-		// as JSON-escaped values and append the raw inner text (properly
-		// trimmed and indented). If innerText is empty, omit the trailing comma.
-		const inner = String(innerText || '').trim();
-		const schemaStr = JSON.stringify(schema);
-		const dataStr = JSON.stringify(data);
-
-		// Remove an accidental leading comma from the inner text (user might've
-		// left a leading comma when editing). Also trim trailing whitespace.
-		const cleanedInner = inner.replace(/^\s*,\s*/, '').replace(/\s*$/, '');
-
-		if (cleanedInner === '') {
-			return `{
-  "$schema": ${schemaStr},
-  "data": ${dataStr},
-
-}`;
-		}
-
-		// Indent inner text by two spaces so it lines up inside the object
-		const indentedInner = cleanedInner.split('\n').map(line => '  ' + line).join('\n');
-
-		return `{
-  "$schema": ${schemaStr},
-  "data": ${dataStr},
-${indentedInner}
-}`;
-	}
-
-	function createNewEditorState(innerSpec: string) {
+	async function createNewEditorState(spec: string) {
+		const { jsonSchema } = await import('codemirror-json-schema');
+		const vegaLiteSchema = await (await fetch(schema)).json();
 		return EditorState.create({
-			doc: innerSpec,
+			doc: spec,
 			extensions: [
-				json(),
+				jsonSchema(vegaLiteSchema),
 				// Theme to make editor fill container and allow scrolling
 				EditorView.theme({
 					'&': { height: '100%', display: 'flex', flexDirection: 'column' },
@@ -409,38 +181,38 @@ ${indentedInner}
 					'.cm-gutters': { flex: '0 0 auto' }
 				}),
 				history(),
+				gutter({ class: "CodeMirror-lint-markers" }),
+				bracketMatching(),
+				highlightActiveLineGutter(),
+				syntaxHighlighting(oneDarkHighlightStyle),
 				keymap.of([
 					...historyKeymap,
 					{ key: 'Tab', run: indentMore },
 					{ key: 'Shift-Tab', run: indentLess },
 					...defaultKeymap
 				]),
-				// write full JSON back to the shared store whenever inner doc changes
+				// write full JSON back to the shared store whenever doc changes
 				EditorView.updateListener.of((v: any) => {
 					if (v.docChanged) {
-						const inner = v.state.doc.toString();
-						const full = composeFullFromInner(inner);
-						// single writer: editor listener updates the shared store
-						codeStore.set(full);
+						const text = v.state.doc.toString();
+						codeStore.set(text);
 					}
 				}),
-				headerMetaField,
-				headerFooterPlugin
+				// Add visual decoration for header/footer lines
+				headerFooterLineDecoration,
+				readOnlyRangesExtension(getReadOnlyRanges)
 			]
 		});
 	}
 
-	onMount(async () => {
-		if (!editorContainer) return;
+	async function initializeEditor() {
+		const initialContents = getReadonlyText();
 
-		data = getDataToken();
+		const state = await createNewEditorState(initialContents);
 
-		if (data?.url) {
-			replaceTopLevelDataValue(data.url);
+		if (editorView) {
+			editorView.destroy();
 		}
-
-		const state = createNewEditorState(extractInnerSpecFromFull(get(codeStore)));
-
 		editorView = new EditorView({
 			state,
 			parent: editorContainer
@@ -451,22 +223,26 @@ ${indentedInner}
 			containerPointerHandler = () => { try { editorView.focus(); } catch (_) {} };
 			editorContainer.addEventListener('pointerdown', containerPointerHandler);
 		}
+	}
+
+	onMount(async () => {
+		if (!editorContainer) return;
+
+		data = getDataToken();
+
+		await initializeEditor();
 
 		editorMounted = true;
 	});
 
 	/**
 	 * Called from page.svelte whenever the user applies changes from the canvas
-	 * newCode is the full JSON text with $schema and data (not just the inner spec) returned by the AI server
+	 * newCode is the full JSON text  returned by the AI server
 	 * @param newCode
 	 */
 	export async function setCode(newCode: string) {
 		// save the current spec in case the user rolls back the applied changes
-		innerSpecBeforeAppliedChanges = editorView.state.doc.toString();
-
-
-		// Build final full JSON string using the same tolerant approach as before,
-		// but then update the editor's inner doc (not the wrapper) and header meta.
+		specBeforeAppliedChanges = editorView.state.doc.toString();
 
 		let finalObj: any = null;
 		let finalString = '';
@@ -493,16 +269,14 @@ ${indentedInner}
 
 		try { finalString = JSON.stringify(finalObj, null, 2); } catch (err) { finalString = String(finalObj); }
 
-		// Update the shared store and editor inner doc
+		// Update the shared store and editor doc
 		if (editorMounted && editorView) {
-			// compute inner spec and dispatch to replace editor content
-			const inner = extractInnerSpecFromFull(finalString);
-			const newState = createNewEditorState(inner);
+			const newState = await createNewEditorState(finalString);
 			editorView.setState(newState)
 
-			editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: inner }, effects: setHeaderMeta.of({ schema, data }) });
+			editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: finalString }});
 
-			if (textareaFallback) textareaFallback.value = inner;
+			if (textareaFallback) textareaFallback.value = finalString;
 			await tick();
 			dispatch('codeApplied');
 		} else {
@@ -513,11 +287,11 @@ ${indentedInner}
 
 
 	export async function rollbackChanges() {
-		console.log(innerSpecBeforeAppliedChanges)
-		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: innerSpecBeforeAppliedChanges }, effects: setHeaderMeta.of({ schema, data }) });
-		const newState = createNewEditorState(innerSpecBeforeAppliedChanges);
+		console.log(specBeforeAppliedChanges)
+		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: specBeforeAppliedChanges }});
+		const newState = await createNewEditorState(specBeforeAppliedChanges);
 		editorView.setState(newState)
-		innerSpecBeforeAppliedChanges = '';
+		specBeforeAppliedChanges = '';
 	}
 
 
@@ -584,25 +358,6 @@ ${indentedInner}
 		else datasetFile = null;
 	}
 
-	/**
-	 * Replace only the top-level `data` value in the stored full JSON.
-	 * The editor contains only the inner spec, so we update
-	 * the shared `codeStore` and the header meta (which updates the widget)
-	 * without forcing edits to the inner editor content.
-	 */
-	export function replaceTopLevelDataValue(datasetUrl: string) {
-		const text = get(codeStore) || '';
-		data = { url: datasetUrl };
-
-		if (editorView) editorView.dispatch({ effects: setHeaderMeta.of({ schema, data: { url: datasetUrl } }) });
-
-		// update the code in the code store to hold the full spec
-		const fullText = composeFullFromInner(editorView ? editorView.state.doc.toString() : extractInnerSpecFromFull(text));
-		codeStore.set(fullText);
-
-		return fullText;
-	}
-
 	async function attachDataset() {
 		// close any help popover when confirming
 		showDatasetHelp = false;
@@ -612,16 +367,15 @@ ${indentedInner}
 			showDatasetModal = false;
 		} else if (datasetMode === 'url' && datasetUrl.trim()) {
 			datasetUrl = datasetUrl.trim()
+			data = { url: datasetUrl }
 			try {
 				const res = await loadDatasetFromUrlHelper(datasetUrl);
 				console.log('Dataset loaded via helper:', res);
 
 				await setDatasetFromDfd(res.df, datasetUrl);
 
-				// update header meta and shared store without changing inner editor content
-				replaceTopLevelDataValue(datasetUrl);
-
-				data = { url: datasetUrl };
+				// reset the editor contents with the new dataset
+				await initializeEditor();
 
 				// const bodyPayload: any = { convId: get(convIdStore), columnNames: getColumnNames(), exampleRow: getFirstRow() };
 
@@ -885,21 +639,7 @@ ${indentedInner}
 		color: #eaeaea;
 	}
   }
-
-  /* Header/footer widget styles */
-  :global(.cm-editor-header) {
-	  display: block;
-
-	  font-family: monospace;
-	  white-space: pre;
-	  pointer-events: none;
-	  color: inherit;
-
-	  box-sizing: border-box;
-	  overflow: hidden;
-  }
-
-  :global(.cm-editor-header-text) {
+  :global(.readonly-text) {
 	  display: inline; /* allow fragmentation across lines */
 	  white-space: pre; /* preserve newlines */
 	  background: rgba(70,70,70,0.8);
@@ -907,22 +647,6 @@ ${indentedInner}
 	  -webkit-box-decoration-break: clone;
 	  box-decoration-break: clone;
 	  background-clip: padding-box;
-  }
-
-  :global(.cm-editor-footer) {
-	  display: block;
-	  width: fit-content;
-	  max-width: 100%;
-	  background: rgba(70,70,70,0.8);
-	  border-radius: 4px;
-
-	  font-family: monospace;
-	  white-space: pre;
-	  pointer-events: none;
-	  color: inherit;
-
-	  box-sizing: border-box;
-	  overflow: hidden;
   }
 
   /* Copy button styles: positioned top-right inside .content and visible on hover/focus */
