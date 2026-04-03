@@ -208,7 +208,10 @@
 	async function initializeEditor() {
 		const initialContents = getReadonlyText();
 
+		codeStore.set(initialContents);
 		const state = await createNewEditorState(initialContents);
+
+		console.log(getColumnNames().join(', '))
 
 		if (editorView) {
 			editorView.destroy();

@@ -1,4 +1,5 @@
 import { OPENAI_API_KEY, OPENAI_MODEL } from '$env/static/private';
+import prompts from './prompts';
 
 /**
  * Server-side OpenAI helper. Initializes the conversation with instructions on how to respond to different requests.
@@ -9,11 +10,6 @@ export async function initialize(payload: any): Promise<number> {
     throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY in your private environment.');
   }
 
-  const promptText = `You are a Vega-Lite expert assistant. Your job is to generate or update valid Vega-Lite JSON specifications based on structured user messages and images.
-Output ONLY raw JSON Vega-Lite specifications, without any markdown, explanations, or commentary.
-The application separately manages dataset and schema; you must NOT generate, modify, or include the "data" or "schema" field in the output spec.
-All field names used in encodings MUST exactly match one of the COLUMN_NAMES which will be provided. You MUST NOT invent new field names.
-If a requested field does not have a match in COLUMN_NAMES, ignore that portion of the request and preserve the existing spec structure.`;
 
   const body = {
     items: [
@@ -23,7 +19,7 @@ If a requested field does not have a match in COLUMN_NAMES, ignore that portion 
         content: [
           {
             type: "input_text",
-            text: promptText
+            text: prompts.initialize
           }
         ]
       }
