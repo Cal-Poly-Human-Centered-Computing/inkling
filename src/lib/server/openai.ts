@@ -118,7 +118,7 @@ export async function sketchToSpec(payload: any): Promise<string> {
  * - Reads the API key from the private env (OPENAI_API_KEY)
  * - Sends a Responses API request (text + optional image) and returns the assistant text
  */
-export async function applyChanges(payload: any): Promise<string> {
+export async function applyAnnotations(payload: any): Promise<string> {
   const key = OPENAI_API_KEY;
   if (!key) {
     throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY in your private environment.');

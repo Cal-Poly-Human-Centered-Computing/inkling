@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { json } from '@sveltejs/kit';
-import { applyChanges } from '$lib/server/openai';
+import { applyAnnotations } from '$lib/server/openai';
 
 /**
  * Endpoint to apply the annotations the user has made to a rendered visualization, and return the updated Vega-Lite spec
@@ -21,7 +21,7 @@ export const POST: RequestHandler = async ({ request }) => {
       convId = body.convId
     }
 
-    const result = await applyChanges({ convId, image: imageUrl, currentSpec, columnNames });
+    const result = await applyAnnotations({ convId, image: imageUrl, currentSpec, columnNames });
     return json({ ok: true, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

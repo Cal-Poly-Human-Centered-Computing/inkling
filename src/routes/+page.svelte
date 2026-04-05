@@ -125,7 +125,7 @@
 
       if (canvasViewRef.renderedVisPresent()) {
         const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), convId: get(convIdStore), columnNames: getColumnNames() };
-        resp = await fetch('/api/apply-changes', {
+        resp = await fetch('/api/apply-annotations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(bodyPayload)
