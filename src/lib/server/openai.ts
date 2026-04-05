@@ -10,7 +10,6 @@ export async function initialize(payload: any): Promise<number> {
     throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY in your private environment.');
   }
 
-
   const body = {
     items: [
       {
@@ -41,43 +40,17 @@ export async function initialize(payload: any): Promise<number> {
 
 }
 
-/**
- * Server-side OpenAI helper.
- * Given a sketch, generates corresponding specs from scratch (without an underlying vis already rendered)
- */
-export async function sketchToSpec(payload: any): Promise<string> {
+async function sendPrompt(convId: number, promptText: string, imageUrl?: any): Promise<string> {
   const key = OPENAI_API_KEY;
   if (!key) {
     throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY in your private environment.');
   }
 
-  // Use a vision-capable model by default; allow override via env
   const model = OPENAI_MODEL ?? 'gpt-4.1';
 
-  const convId = payload.convId;
-
-  const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
-
-  const promptText = `The attached image is a sketch of a data visualization. Your task is to generate a Vega-Lite spec that will reproduce the visualization.
-  
-    Analyze the image and internally determine:
-        - What MARKS are present (point, bar, line, area, text, rule, etc.). There may be multiple mark types.
-        - What VISUAL ENCODINGS are used (x, y, color, size, shape, opacity, tooltip, etc.). Use the COLUMN_NAMES below to infer likely field mappings.
-        - What LAYERS are present (multiple charts superimposed).
-        - What TRANSFORMS are implied (aggregate: sum/mean/count/etc., bin, calculate, filter, regression, window, stack, etc.).
-    Using these inferred MARKS, ENCODINGS, LAYERS, and TRANSFORMS, generate the simplest possible corresponding Vega-Lite spec to reproduce the visualization.
-    
-    Respond with ONLY raw JSON, omitting the "data" and "schema" elements (those are handled separately). No markdown, explanations, commentary, or surrounding text. 
-    The top-level object must be a valid Vega-Lite specification (excluding "data" and "schema"). 
-    Never invent field names; only use values from COLUMN_NAMES below.
-    
-    COLUMN_NAMES: ${payload.columnNames.length ? payload.columnNames.join(', ') : 'N/A'}
-  `
-
-  // Build the Responses API input content array
   const userContent: any[] = [{ type: 'input_text', text: promptText }];
+
   if (imageUrl) {
-    // The Responses API supports data URLs (data:image/png;base64,...) or image URLs
     userContent.push({ type: 'input_image', image_url: imageUrl });
   }
 
@@ -108,35 +81,36 @@ export async function sketchToSpec(payload: any): Promise<string> {
 
   const data = await res.json();
 
-  // Try common places for textual output from Responses API
-  if (typeof data.output_text === 'string' && data.output_text.length > 0) {
-    return data.output_text;
-  }
+  return data.output_text;
+}
 
-  // The `output` array can contain items with a `content` array; try to locate text there
-  if (Array.isArray(data.output)) {
-    for (const outItem of data.output) {
-      if (!outItem || !Array.isArray(outItem.content)) continue;
-      for (const c of outItem.content) {
-        if (!c) continue;
-        // Newer content items often have a `text` property
-        if (typeof c.text === 'string' && c.text.length > 0) return c.text;
-        // Some items may have type and text fields
-        if (c.type === 'output_text' && typeof c.text === 'string') return c.text;
-        // In some cases the content item might be a message-like object
-        if (c.type === 'message' && typeof c.text === 'string') return c.text;
-      }
-    }
-  }
+/**
+ * Server-side OpenAI helper.
+ * Given a sketch, generates corresponding specs from scratch (without an underlying vis already rendered)
+ */
+export async function sketchToSpec(payload: any): Promise<string> {
 
-  // Fallbacks: try a few other known fields
-  if (Array.isArray(data.items) && data.items.length > 0) {
-    const first = data.items[0];
-    if (typeof first.text === 'string' && first.text.length > 0) return first.text;
-  }
+  const convId = payload.convId;
 
-  // As a last resort return the raw JSON string (caller can parse if needed)
-  return JSON.stringify(data);
+  // 1: Send the image to analyze
+
+  const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
+
+  const imageElements = sendPrompt(convId, prompts.analyzeSketchFromScratch, imageUrl);
+
+  // 2: Send the elements to generate a Vega-Lite spec
+
+  const initialSpec = sendPrompt(convId, `${prompts.elementsToVegaLite}\n\n${imageElements}`);
+
+  // 3: Match fields to the column names
+
+  const specWithColumns = sendPrompt(convId, `${prompts.matchColumnNames} ${payload.columnNames.join(", ")}\n\n${initialSpec}`);
+
+  // 4: Validate the final spec
+
+  const finalSpec = sendPrompt(convId, `${prompts.reviewFinalOutput}\n\n${specWithColumns}`);
+
+  return finalSpec;
 }
 
 /**
