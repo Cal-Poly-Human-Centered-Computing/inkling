@@ -27,7 +27,7 @@ const prompts = {
     Use these to generate a corresponding Vega-Lite specification to reproduce the visualization.
     If there is a CHART POSITION element, the data visualization contains multiple charts concatenated together; use their positions to determine how they are concatenated.
     Do not include the "data" or "schema" attributes in the specification.
-    Respond only with the Vega-Lite specification.`,
+    Respond only with the Vega-Lite JSON spec (raw JSON).`,
 
     matchColumnNames: `Given the following COLUMN_NAMES, update the below Vega-Lite specification to use the closest matching column names as the field names.
     ONLY modify the field names in the Vega-Lite specification, do not modify any other part of the spec. If there are multiple columns that could match a field name, choose the one that is most likely to be correct based on the context of the visualization.
@@ -36,9 +36,34 @@ const prompts = {
 
     reviewFinalOutput: `Review the below Vega-Lite specification. Modify it as needed to follow these guidelines, and output only the final valid Vega-Lite JSON object:
     
-    - Assuming the "data" and "schema" attributes will be properly added before rendering, the spec must be a valid Vega-Lite JSON object and can be rendered without errors.
+    - Assuming the "data" and "schema" attributes will be properly assigned before rendering, the spec must be a valid Vega-Lite JSON object and can be rendered without errors.
     - The spec must be as simple as possible while still accurately representing the visualization; there should not be unnecessarily duplicated code.
-    - The spec must not contain any comments.`
+    - The spec must not contain any comments.`,
+
+    analyzeAnnotatedSketch: `Below is a Vega-Lite specification, CURRENT_VEGA_LITE_SPEC.
+    The attached image shows the CURRENT_VEGA_LITE_SPEC rendered, with user annotations on top of it (pen strokes and/or typed text).
+    
+    Analyze the image and determine the user's intent. What visual elements has the user added or edited? Infer any new field names based on the context of the visualization.
+    
+    Respond with a list of instructions describing the specific changes that need to be made to the CURRENT_VEGA_LITE_SPEC to reflect the user's intent.
+    
+    Do NOT add or modify keys that specify pixel positions (x/y coordinates of title/legend) unless the user explicitly indicated so.
+    
+    If the user's intent cannot be determined, respond with "Do not make any changes."
+    
+    CURRENT_VEGA_LITE_SPEC:`,
+
+    applyInstructions: `Below is a Vega-Lite specification, CURRENT_VEGA_LITE_SPEC, followed by instructions for specific changes to make.
+    
+    Modify CURRENT_VEGA_LITE_SPEC according to the instructions.
+    - Apply the smallest possible structural change(s) that satisfy the instructions.
+    - Preserve unrelated transforms/encodings/scales/config as much as possible. Do NOT apply any unnecessary changes that were not specified.
+    - Prefer editing existing properties over introducing new layers/transforms.
+    - If you introduce layers/transforms/concatenation to add something new, move the existing top-level view down into the layers to avoid duplicating code.
+   
+    Respond only with the updated Vega-Lite JSON spec (raw JSON).
+    
+    CURRENT_VEGA_LITE_SPEC:`
 };
 
 export default prompts;
