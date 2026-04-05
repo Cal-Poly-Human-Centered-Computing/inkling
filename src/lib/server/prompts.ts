@@ -46,8 +46,9 @@ const prompts = {
     Analyze the image and determine the user's intent. What visual elements has the user added or edited? Infer any new field names based on the context of the visualization.
     
     Respond with a list of instructions describing the specific changes that need to be made to the CURRENT_VEGA_LITE_SPEC to reflect the user's intent.
+    What marks, encodings, layers, or transforms need to be added or edited?
     
-    Do NOT add or modify keys that specify pixel positions (x/y coordinates of title/legend) unless the user explicitly indicated so.
+    Do NOT instruct to add or modify keys that specify pixel positions (x/y coordinates of title/legend) unless the user explicitly indicated so.
     
     If the user's intent cannot be determined, respond with "Do not make any changes."
     
@@ -62,6 +63,18 @@ const prompts = {
     - If you introduce layers/transforms/concatenation to add something new, move the existing top-level view down into the layers to avoid duplicating code.
    
     Respond only with the updated Vega-Lite JSON spec (raw JSON).
+    
+    CURRENT_VEGA_LITE_SPEC:`,
+
+    interpretUserMessage: `Below is a Vega-Lite specification, CURRENT_VEGA_LITE_SPEC, followed by a user's message instructing how they want the spec to change.
+    
+    Turn the user's message into a list of instructions describing the specific changes that need to be made to the CURRENT_VEGA_LITE_SPEC to reflect the user's intent.
+    - What marks, encodings, layers, or transforms need to be added or edited? Apply the smallest possible structural change(s) that satisfies the user's message.
+    - Infer any new field names based on the user's message.
+    
+    Respond with this list of instructions.
+        
+    If the user's intent cannot be determined, respond with "Do not make any changes."
     
     CURRENT_VEGA_LITE_SPEC:`
 };
