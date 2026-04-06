@@ -124,19 +124,22 @@ export async function sketchToSpec(payload: any): Promise<string> {
 
   const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
 
-  const imageElements = sendPrompt(convId, prompts.analyzeSketchFromScratch, imageUrl);
+  const imageElements = await sendPrompt(convId, prompts.analyzeSketchFromScratch, imageUrl);
+  console.log(imageElements);
 
   // 2: Send the elements to generate a Vega-Lite spec
 
-  const initialSpec = sendPrompt(convId, `${prompts.elementsToVegaLite}\n\n${imageElements}`);
+  const initialSpec = await sendPrompt(convId, `${prompts.elementsToVegaLite}\n\n${imageElements}`);
+  console.log(initialSpec);
 
   // 3: Match fields to the column names
 
-  const specWithColumns = sendPrompt(convId, `${prompts.matchColumnNames} ${payload.columnNames.join(", ")}\n\n${initialSpec}`);
+  const specWithColumns = await sendPrompt(convId, `${prompts.matchColumnNames} ${payload.columnNames.join(", ")}\n\n${initialSpec}`);
+  console.log(specWithColumns);
 
   // 4: Validate the final spec
 
-  const finalSpec = sendPrompt(convId, `${prompts.reviewFinalOutput}\n\n${specWithColumns}`);
+  const finalSpec = await sendPrompt(convId, `${prompts.reviewFinalOutput}\n\n${specWithColumns}`);
 
   return finalSpec;
 }
@@ -158,25 +161,28 @@ export async function applyAnnotations(payload: any): Promise<string> {
 
   let promptText = `${prompts.analyzeAnnotatedSketch}\n\n${currentSpec}`;
 
-  const instructions = sendPrompt(convId, promptText, imageUrl);
+  const instructions = await sendPrompt(convId, promptText, imageUrl);
+  console.log(instructions);
 
   // 2: Send the instructions for changes to apply
 
   promptText = `${prompts.applyInstructions}\n\n${currentSpec}\n\n${instructions}`;
 
-  const updatedSpec = sendPrompt(convId, promptText);
+  const updatedSpec = await sendPrompt(convId, promptText);
+  console.log(updatedSpec);
 
   // 3: Match the fields to column names
 
   promptText = `${prompts.matchColumnNames} ${payload.columnNames.join(", ")}\n\n${updatedSpec}`
 
-  const specWithColumns = sendPrompt(convId, promptText);
+  const specWithColumns = await sendPrompt(convId, promptText);
+  console.log(specWithColumns);
 
   // 4: Validate final spec
 
   promptText = `${prompts.reviewFinalOutput}\n\n${specWithColumns}`
 
-  const finalSpec = sendPrompt(convId, promptText);
+  const finalSpec = await sendPrompt(convId, promptText);
 
   return finalSpec;
 
@@ -199,25 +205,31 @@ export async function sendChat(payload: any): Promise<string> {
 
   let promptText = `${prompts.interpretUserMessage}\n\n${currentSpec}\n\n${chatMessage}`;
 
-  const instructions = sendPrompt(convId, promptText);
+  const instructions = await sendPrompt(convId, promptText);
+  console.log(instructions);
 
   // 2: Send the instructions for changes to apply
 
   promptText = `${prompts.applyInstructions}\n\n${currentSpec}\n\n${instructions}`;
 
-  const updatedSpec = sendPrompt(convId, promptText);
+
+  const updatedSpec = await sendPrompt(convId, promptText);
+  console.log(updatedSpec);
 
   // 3: Match the fields to column names
 
   promptText = `${prompts.matchColumnNames} ${payload.columnNames.join(", ")}\n\n${updatedSpec}`
 
-  const specWithColumns = sendPrompt(convId, promptText);
+
+  const specWithColumns = await sendPrompt(convId, promptText);
+  console.log(specWithColumns);
 
   // 4: Validate final spec
 
   promptText = `${prompts.reviewFinalOutput}\n\n${specWithColumns}`
 
-  const finalSpec = sendPrompt(convId, promptText);
+
+  const finalSpec = await sendPrompt(convId, promptText);
 
   return finalSpec;
 

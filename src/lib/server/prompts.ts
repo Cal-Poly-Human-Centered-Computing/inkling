@@ -7,7 +7,7 @@ const prompts = {
         - Are there multiple charts concatenated together? If so, where is each positioned within the visualization? (e.g. top/bottom, left/right)
         - For each chart, determine:
             - What MARKS are present (point, bar, line, area, etc.)? There may be multiple mark types.
-            - What VISUAL ENCODINGS are used? A visual encoding is a mapping from a mark's visual property to a field in the data (like the mark's color, x,y position, etc.). Infer field names based on the context of the visualization.
+            - What VISUAL ENCODINGS are used? A visual encoding is a mapping from a mark's visual property to a field in the data (like the mark's x,y position, etc.). Infer field names based on the context of the visualization. Do not specify any color encodings.
             - What LAYERS are present? A LAYER is a chart that superimposed on top of another chart.
             - What TRANSFORMS have been performed? Transforms might be aggregations (like count, std, mean, sum), calculation of new fields, or other transformations, like computing a regression or a window transform.
         
@@ -32,6 +32,8 @@ const prompts = {
     matchColumnNames: `Given the following COLUMN_NAMES, update the below Vega-Lite specification to use the closest matching column names as the field names.
     ONLY modify the field names in the Vega-Lite specification, do not modify any other part of the spec. If there are multiple columns that could match a field name, choose the one that is most likely to be correct based on the context of the visualization.
     
+    Output only the updated Vega-Lite specification.
+    
     COLUMN_NAMES:`,
 
     reviewFinalOutput: `Review the below Vega-Lite specification. Modify it as needed to follow these guidelines, and output only the final valid Vega-Lite JSON object:
@@ -41,9 +43,11 @@ const prompts = {
     - The spec must not contain any comments.`,
 
     analyzeAnnotatedSketch: `Below is a Vega-Lite specification, CURRENT_VEGA_LITE_SPEC.
-    The attached image shows the CURRENT_VEGA_LITE_SPEC rendered, with user annotations on top of it (pen strokes and/or typed text).
+    The attached image shows the CURRENT_VEGA_LITE_SPEC rendered, with user annotations on top of it (pen strokes and/or typed text). You will analyze the image and determine the user's intent. 
     
-    Analyze the image and determine the user's intent. What visual elements has the user added or edited? Infer any new field names based on the context of the visualization.
+    What visual elements has the user added or edited? Infer any new field names based on the context of the visualization.
+    
+    Prioritize minimal and simple changes to the specification that satisfy the user's intent. Do not add extra styling, smoothing, or transformations unless explicitly indicated by the annotations.
     
     Respond with a list of instructions describing the specific changes that need to be made to the CURRENT_VEGA_LITE_SPEC to reflect the user's intent.
     What marks, encodings, layers, or transforms need to be added or edited?
