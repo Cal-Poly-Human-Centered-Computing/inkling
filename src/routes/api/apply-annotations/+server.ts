@@ -13,15 +13,13 @@ export const POST: RequestHandler = async ({ request }) => {
     let imageUrl: string | null = null;
     let currentSpec: string = '';
     let columnNames: string[] | null = null;
-    let convId: number | null = null;
     if (body && typeof body === 'object') {
       imageUrl = (body as any).image ?? (body as any).imageUrl ?? null;
       currentSpec = body.currentSpec ?? '';
       columnNames = body.columnNames ?? null;
-      convId = body.convId
     }
 
-    const result = await applyAnnotations({ convId, image: imageUrl, currentSpec, columnNames });
+    const result = await applyAnnotations({ image: imageUrl, currentSpec, columnNames });
     return json({ ok: true, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -34,6 +34,7 @@
 		"codemirror-json-schema": "^0.8.1",
 		"codemirror-readonly-ranges": "^0.1.0-alpha.2",
 		"danfojs": "^1.2.0",
+		"openai": "^6.33.0",
 		"svelte-fa": "^4.0.4",
 		"vega": "^6.2.0",
 		"vega-embed": "^7.1.0"

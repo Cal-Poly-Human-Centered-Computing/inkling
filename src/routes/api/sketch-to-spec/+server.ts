@@ -12,14 +12,12 @@ export const POST: RequestHandler = async ({ request }) => {
     // Prefer an explicit image URL field (support both `image` and `imageUrl` keys)
     let imageUrl: string | null = null;
     let columnNames: string[] | null = null;
-    let convId: number | null = null;
     if (body && typeof body === 'object') {
       imageUrl = (body as any).image ?? (body as any).imageUrl ?? null;
       columnNames = body.columnNames ?? null;
-      convId = body.convId
     }
 
-    const result = await sketchToSpec({ convId, image: imageUrl, columnNames });
+    const result = await sketchToSpec({ image: imageUrl, columnNames });
     return json({ ok: true, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

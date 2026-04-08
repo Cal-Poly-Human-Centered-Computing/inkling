@@ -28,7 +28,7 @@
     if (chatSending) return;
     chatSending = true;
 
-    const bodyPayload: any = { convId: get(convIdStore), currentSpec: get(codeStore), chatMessage: e.detail, columnNames: getColumnNames() };
+    const bodyPayload: any = { currentSpec: get(codeStore), chatMessage: e.detail, columnNames: getColumnNames() };
 
     console.log(bodyPayload);
 
@@ -124,14 +124,14 @@
       let resp;
 
       if (canvasViewRef.renderedVisPresent()) {
-        const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), convId: get(convIdStore), columnNames: getColumnNames() };
+        const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), columnNames: getColumnNames() };
         resp = await fetch('/api/apply-annotations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(bodyPayload)
         });
       } else {
-        const bodyPayload: any = { image: dataUrl, convId: get(convIdStore), columnNames: getColumnNames() };
+        const bodyPayload: any = { image: dataUrl, columnNames: getColumnNames() };
         console.log(bodyPayload)
         resp = await fetch('/api/sketch-to-spec', {
           method: 'POST',
