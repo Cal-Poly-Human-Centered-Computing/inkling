@@ -1077,7 +1077,7 @@
 
 	<!-- Replace canvas with an SVG overlay that renders strokes and texts as DOM elements -->
 	<svg bind:this={svgEl}
-		style="position:absolute; left:0; top:0; right:0; bottom:0; width:100%; height:100%; pointer-events:auto; touch-action:none; margin: 20px; z-index:30;"
+		style="position:absolute; left:0; top:0; right:0; bottom:0; width:100%; height:100%; pointer-events:auto; touch-action:none; z-index:30;"
 		on:pointerdown={pointerDown}
 		on:pointermove={pointerMove}
 		on:pointerup={pointerUp}

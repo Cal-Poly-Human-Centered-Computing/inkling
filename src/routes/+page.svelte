@@ -98,7 +98,7 @@
       try {
         if (canvasViewRef && typeof canvasViewRef.exportCanvasDataUrl === 'function') {
           dataUrl = await canvasViewRef.exportCanvasDataUrl('image/png', undefined, window.devicePixelRatio ?? 1);
-          // robust preview: try writing into a new blank tab; fallback to blob URL if write fails
+          // FOR DEBUGGING: uncomment the below block to see a preview of the exported image
           // if (dataUrl) {
           //   const opened = openImageInNewTab(dataUrl);
           //   if (!opened) {
