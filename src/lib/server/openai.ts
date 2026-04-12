@@ -143,8 +143,8 @@ async function applyInstructions(currentSpec: string, instructions: string) {
   return updatedSpec;
 }
 
-async function interpretUserMessage(currentSpec: string, chatMessage: string) {
-  let promptText = prompts.interpretUserMessage;
+async function interpretInstructions(currentSpec: string, chatMessage: string) {
+  let promptText = prompts.interpretInstructions;
 
   let inputText = `CURRENT_VEGA_LITE_SPEC:\n${currentSpec}\n\nUSER_MESSAGE:\n${chatMessage}`;
 
@@ -195,15 +195,19 @@ export async function applyAnnotations(payload: any): Promise<string> {
 
   const instructions = await analyzeAnnotatedSketch(currentSpec, imageUrl);
 
-  // 2: Send the instructions for changes to apply
+  // 2: Translate the instructions into specific changes to the Vega-Lite spec
 
-  const updatedSpec = await applyInstructions(currentSpec, instructions);
+  const changesToMake = await interpretInstructions(currentSpec, instructions);
 
-  // 3: Match the fields to column names
+  // 3: Apply the changes to the spec
+
+  const updatedSpec = await applyInstructions(currentSpec, changesToMake);
+
+  // 4: Match the fields to column names
 
   const specWithColumns = await matchColumnNames(payload.columnNames, updatedSpec);
 
-  // 4: Validate final spec
+  // 5: Validate final spec
 
   const finalSpec = await reviewFinalOutput(specWithColumns);
 
@@ -224,7 +228,7 @@ export async function sendChat(payload: any): Promise<string> {
 
   // 1: Turn the user message into specific instructions
 
-  const instructions = await interpretUserMessage(currentSpec, chatMessage);
+  const instructions = await interpretInstructions(currentSpec, chatMessage);
 
   // 2: Send the instructions for changes to apply
 
