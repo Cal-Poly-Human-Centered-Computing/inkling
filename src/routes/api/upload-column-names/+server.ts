@@ -1,3 +1,8 @@
+/**
+ * An API route to upload just the column names
+ * Not needed right now, but leaving here just in case
+ */
+
 // import type { RequestHandler } from '@sveltejs/kit';
 // import { json } from '@sveltejs/kit';
 // import {uploadColumnNames} from '$lib/server/openai';

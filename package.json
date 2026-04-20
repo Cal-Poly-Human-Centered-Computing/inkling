@@ -21,6 +21,7 @@
 		"vite": "^7.2.6"
 	},
 	"dependencies": {
+		"@anthropic-ai/sdk": "^0.90.0",
 		"@codemirror/commands": "^6.10.1",
 		"@codemirror/lang-json": "^6.0.2",
 		"@codemirror/language": "^6.12.3",

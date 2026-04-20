@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { json } from '@sveltejs/kit';
-import {sendChat} from '$lib/server/openai';
+import {sendChat} from '$lib/server/server';
 
 export const POST: RequestHandler = async ({ request }) => {
   try {

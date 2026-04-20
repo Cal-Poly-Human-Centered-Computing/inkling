@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { json } from '@sveltejs/kit';
-import { applyAnnotations } from '$lib/server/openai';
+import { applyAnnotations } from '$lib/server/server';
 
 /**
  * Endpoint to apply the annotations the user has made to a rendered visualization, and return the updated Vega-Lite spec

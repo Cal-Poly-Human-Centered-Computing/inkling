@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { json } from '@sveltejs/kit';
-import {sketchToSpec} from '$lib/server/openai';
+import {sketchToSpec} from '$lib/server/server';
 
 /**
  * Endpoint to convert a sketch to Vega-Lite from scratch (no rendered visualization present)

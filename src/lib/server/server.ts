@@ -1,12 +1,21 @@
-import { OPENAI_API_KEY, OPENAI_MODEL } from '$env/static/private';
+import {CLAUDE_API_KEY, OPENAI_API_KEY, OPENAI_MODEL, CLAUDE_MODEL} from '$env/static/private';
 import prompts from './prompts';
 import OpenAI from "openai";
 import type {ResponseInput, ResponseInputMessageContentList} from "openai/resources/responses/responses";
+import {Anthropic} from "@anthropic-ai/sdk";
 
 if (!OPENAI_API_KEY) {
   throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY in your private environment.');
 }
-const client = new OpenAI({ apiKey: OPENAI_API_KEY });
+const openAI = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+if (!CLAUDE_API_KEY) {
+  throw new Error('Claude API key not configured. Set CLAUDE_API_KEY in your private environment.');
+}
+const claude = new Anthropic({ apiKey: CLAUDE_API_KEY });
+
+// Choose which API to use: "openai" or "claude"
+const api = "claude";
 
 /**
  * Server-side OpenAI helper. Initializes the conversation with instructions on how to respond to different requests.
@@ -43,7 +52,7 @@ const client = new OpenAI({ apiKey: OPENAI_API_KEY });
 //
 // }
 
-async function sendPrompt(promptText: string, opts: { inputText?: string; imageUrl?: any }): Promise<string> {
+async function sendOpenAIPrompt(promptText: string, opts: { inputText?: string; imageUrl?: any }): Promise<string> {
   const { inputText, imageUrl } = opts;
 
   console.log(promptText);
@@ -79,12 +88,82 @@ async function sendPrompt(promptText: string, opts: { inputText?: string; imageU
     content: userContent
   })
 
-  const res = await client.responses.create({
+  const res = await openAI.responses.create({
     model: OPENAI_MODEL,
     input: input,
   })
 
   return res.output_text;
+}
+
+// For some reason the OpenAI API can handle the raw image URL, but the Claude API needs it without the prefix
+function extractBase64(dataUrl: string | null): string | null {
+  if (!dataUrl) return null;
+  if (typeof dataUrl !== 'string') return null;
+  // strip data:image/...;base64, prefix if present
+  const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+  if (match) return match[2];
+  // if it already looks like base64, return it
+  const maybe = dataUrl.trim();
+  if (/^[A-Za-z0-9+/=\r\n]+$/.test(maybe)) return maybe.replace(/\r?\n/g, '');
+  return null;
+}
+
+async function sendClaudePrompt(promptText: string, opts: { inputText?: string; imageUrl?: any }): Promise<string> {
+  const { inputText, imageUrl } = opts;
+
+  console.log(promptText);
+  console.log(inputText);
+
+  const base64 = extractBase64(imageUrl);
+  if (imageUrl && !base64) {
+    console.warn('[Claude] imageUrl present but could not normalize to base64; not sending image.');
+  }
+
+  let messages: any[] = [];
+
+  // Give the input using the user role
+  let userContent: any[] = []
+
+  if (imageUrl) {
+    userContent.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: "image/png",
+        data: base64
+      }
+    })
+  }
+
+  if (inputText) {
+    userContent.push({
+      type: "text",
+      text: inputText
+    })
+  }
+
+  messages.push({
+    role: "user",
+    content: userContent
+  })
+
+  const res: any = await claude.messages.create({
+    model: CLAUDE_MODEL,
+    system: promptText,
+    max_tokens: 1024,
+    messages: messages,
+  })
+
+  return res.content[0].text;
+}
+
+async function sendPrompt(promptText: string, opts: { inputText?: string; imageUrl?: any }): Promise<string> {
+    if (api === "claude") {
+      return await sendClaudePrompt(promptText, opts);
+    } else {
+      return await sendOpenAIPrompt(promptText, opts);
+    }
 }
 
 async function analyzeSketchFromScratch(imageUrl: string) {
@@ -154,7 +233,7 @@ async function interpretInstructions(currentSpec: string, chatMessage: string) {
 }
 
 /**
- * Server-side OpenAI helper.
+ * Server-side helper.
  * Given a sketch, generates corresponding specs from scratch (without an underlying vis already rendered)
  */
 export async function sketchToSpec(payload: any): Promise<string> {
@@ -181,9 +260,8 @@ export async function sketchToSpec(payload: any): Promise<string> {
 }
 
 /**
- * Server-side OpenAI helper.
- * - Reads the API key from the private env (OPENAI_API_KEY)
- * - Sends a Responses API request (text + optional image) and returns the assistant text
+ * Server-side helper.
+ * Given a Vega-Lite spec and annotated visualization, returns corresponding code
  */
 export async function applyAnnotations(payload: any): Promise<string> {
 
@@ -218,8 +296,7 @@ export async function applyAnnotations(payload: any): Promise<string> {
 
 /**
  * Server-side OpenAI helper.
- * - Reads the API key from the private env (OPENAI_API_KEY)
- * - Sends a Responses API request (text + optional image) and returns the assistant text
+ * Given a Vega-Lite spec and a user message, returns a corresponding spec applying the user's message
  */
 export async function sendChat(payload: any): Promise<string> {
 
