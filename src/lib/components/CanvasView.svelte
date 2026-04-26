@@ -340,8 +340,8 @@
 		} else if (selectedTool === 'textbox') {
 			// create a text box overlay
 			const id = String(Date.now()) + '-' + Math.random().toString(36).slice(2,8);
-			editingX = p.x;
-			editingY = p.y;
+			editingX = p.x - 2;
+			editingY = p.y - 9;
 			editingWidth = 160;
 			editingHeight = 24;
 			// include default font properties so SVG uses consistent rendering
