@@ -17,52 +17,16 @@ const claude = new Anthropic({ apiKey: CLAUDE_API_KEY });
 // Choose which API to use: "openai" or "claude"
 const api = "claude";
 
-/**
- * Server-side OpenAI helper. Initializes the conversation with instructions on how to respond to different requests.
- */
-// export async function initialize(payload: any): Promise<number> {
-//
-//   const body = {
-//     items: [
-//       {
-//         type: "message",
-//         role: "developer",
-//         content: [
-//           {
-//             type: "input_text",
-//             text: prompts.initialize
-//           }
-//         ]
-//       }
-//     ]
-//   };
-//
-//   const res = await fetch("https://api.openai.com/v1/conversations", {
-//     method: "POST",
-//     headers: {
-//       "Content-Type": "application/json",
-//       Authorization: `Bearer ${key}`
-//     },
-//     body: JSON.stringify(body)
-//   });
-//
-//   if (!res.ok) throw new Error(await res.text());
-//   const conversation = await res.json();
-//   return conversation.id;
-//
-// }
-
-async function sendOpenAIPrompt(promptText: string, opts: { inputText?: string; imageUrl?: any }): Promise<string> {
+async function sendOpenAIPrompt(opts: { inputText?: string; imageUrl?: any }): Promise<string> {
   const { inputText, imageUrl } = opts;
 
-  console.log(promptText);
   console.log(inputText);
 
   // Give the instructions using the developer role
   let input: ResponseInput = [
     {
       role: "developer",
-      content: promptText
+      content: prompts.systemPrompt
     }
   ];
 
@@ -109,10 +73,9 @@ function extractBase64(dataUrl: string | null): string | null {
   return null;
 }
 
-async function sendClaudePrompt(promptText: string, opts: { inputText?: string; imageUrl?: any }): Promise<string> {
+async function sendClaudePrompt(opts: { inputText?: string; imageUrl?: any }): Promise<any> {
   const { inputText, imageUrl } = opts;
 
-  console.log(promptText);
   console.log(inputText);
 
   const base64 = extractBase64(imageUrl);
@@ -148,88 +111,145 @@ async function sendClaudePrompt(promptText: string, opts: { inputText?: string; 
     content: userContent
   })
 
-  const res: any = await claude.messages.create({
+  let payload: any = {
     model: CLAUDE_MODEL,
-    system: promptText,
-    max_tokens: 1024,
+    system: prompts.systemPrompt,
+    max_tokens: 4096,
     messages: messages,
-  })
+    output_config: {
+      effort: "high"
+    },
+    thinking: {
+      type: "adaptive"
+    },
+    tools: [{ type: "web_search_20260209", name: "web_search" }]
+  }
 
-  return res.content[0].text;
+  const res: any = await claude.messages.create(payload)
+
+  console.log(res)
+
+  // if the agent was thinking or used web search, then the output will be later in the content array
+  for (let i = res.content.length - 1; i>=0; i--) {
+    if (res.content[i].type === 'text') {
+      return res.content[i].text
+    }
+  }
+
+  return null;
 }
 
-async function sendPrompt(promptText: string, opts: { inputText?: string; imageUrl?: any }): Promise<string> {
+async function sendPrompt(opts: { inputText?: string; imageUrl?: any }): Promise<any> {
     if (api === "claude") {
-      return await sendClaudePrompt(promptText, opts);
+      return await sendClaudePrompt(opts);
     } else {
-      return await sendOpenAIPrompt(promptText, opts);
+      return await sendOpenAIPrompt(opts);
     }
 }
 
-async function analyzeSketchFromScratch(imageUrl: string) {
-  let promptText = prompts.analyzeSketchFromScratch;
+async function analyzeSketchFromScratch(imageUrl: string, columnNames: string[]) {
+  let inputText = `${prompts.analyzeSketchFromScratch}\n\nCOLUMN NAMES: ${columnNames.join(", ")}`;
 
-  const imageElements = await sendPrompt(promptText, {imageUrl});
-
-  return imageElements;
-}
-
-async function elementsToVegaLite(imageElements: string) {
-  let promptText = prompts.elementsToVegaLite
-
-  const initialSpec = await sendPrompt(promptText, {inputText: imageElements});
+  const initialSpec = await sendPrompt({inputText, imageUrl});
 
   return initialSpec;
 }
 
-async function matchColumnNames(columnNames: string[], initialSpec: string) {
-  let promptText = prompts.matchColumnNames
+/**
+ * Iteratively review the generated spec to make sure it matches the intention of the sketch
+ * @param spec
+ * @param imageUrl
+ */
+async function compareSpecToSketch(spec: string, imageUrl: string) {
+  let i = 0;
+  let currentSpec = spec;
 
-  let inputText = `COLUMN_NAMES: ${columnNames.join(", ")}\n\n${initialSpec}`
+  while (i < 3) { // limit to 3 iterations to avoid infinite loops
+    let inputText = `${currentSpec}\n\n${prompts.compareSpecToSketch}`
+    let res = await sendPrompt({inputText, imageUrl });
 
-  const specWithColumns = await sendPrompt(promptText, {inputText});
+    // even with strict instructions in the prompt, sometimes the AI includes explanations before saying "no changes"
+    if ((res as string).toLowerCase().includes('no changes')) {
+      break;
+    }
 
-  return specWithColumns;
+    currentSpec = res;
+    i++;
+  }
+
+  return currentSpec;
 }
 
-async function reviewFinalOutput(spec: string) {
-  let promptText = prompts.reviewFinalOutput;
+/**
+ * Iteratively review the updated spec to make sure it matches the intention of the annotations
+ * @param spec
+ * @param imageUrl
+ */
+async function compareSpecToAnnotations(spec: string, imageUrl: string) {
+  let i = 0;
+  let currentSpec = spec;
 
-  let inputText = spec;
+  while (i < 3) { // limit to 3 iterations to avoid infinite loops
+    let inputText = `${currentSpec}\n\n${prompts.compareSpecToAnnotations}`
+    let res = await sendPrompt({inputText, imageUrl})
 
-  const finalSpec = await sendPrompt(promptText, {inputText});
+    // even with strict instructions in the prompt, sometimes the AI includes explanations before saying "no changes"
+    if ((res as string).toLowerCase().includes('no changes')) {
+      break;
+    }
 
-  return finalSpec;
+    currentSpec = res;
+    i++;
+  }
+
+  return currentSpec;
 }
 
-async function analyzeAnnotatedSketch(currentSpec: string, imageUrl: string) {
-  let promptText = prompts.analyzeAnnotatedSketch;
+/**
+ * Iteratively review the updated spec to make sure it matches the intention of the chat message
+ * @param spec
+ * @param imageUrl
+ */
+async function compareSpecToInstructions(oldSpec: string, updatedSpec: string, chatMessage: string) {
+  let i = 0;
+  let currentSpec = updatedSpec;
 
-  let inputText = `CURRENT_VEGA_LITE_SPEC:\n${currentSpec}`
+  while (i < 3) { // limit to 3 iterations to avoid infinite loops
+    let inputText = `SPEC_BEFORE:\n${oldSpec}
+    
+    INSTRUCTIONS:\n${chatMessage}
+    
+    SPEC_AFTER:\n${currentSpec}
+    
+    ${prompts.compareSpecToInstructions}`
+    let res = await sendPrompt({inputText})
 
-  const instructions = await sendPrompt(promptText, {inputText, imageUrl});
+    // even with strict instructions in the prompt, sometimes the AI includes explanations before saying "no changes"
+    if ((res as string).toLowerCase().includes('no changes')) {
+      break;
+    }
+
+    currentSpec = res;
+    i++;
+  }
+
+  return currentSpec;
+}
+
+async function analyzeAnnotatedSketch(currentSpec: string, imageUrl: string, columnNames: string[]) {
+  let inputText = `${currentSpec}\n\n${prompts.analyzeAnnotatedSketch}\n\nCOLUMN NAMES: ${columnNames.join(", ")}`;
+
+  const instructions = await sendPrompt({inputText, imageUrl});
 
   return instructions;
 }
 
-async function applyInstructions(currentSpec: string, instructions: string) {
-  let promptText = prompts.applyInstructions;
+async function applyChatMessage(currentSpec: string, instructions: string) {
+  let inputText = `${currentSpec}\n\nINSTRUCTIONS:\n${instructions}\n\n${prompts.applyChatMessage}`;
 
-  let inputText = `CURRENT_VEGA_LITE_SPEC:\n${currentSpec}\n\nINSTRUCTIONS:\n${instructions}`
-
-  const updatedSpec = await sendPrompt(promptText, {inputText});
+  const updatedSpec = await sendPrompt({inputText});
 
   return updatedSpec;
-}
-
-async function interpretInstructions(currentSpec: string, chatMessage: string) {
-  let promptText = prompts.interpretInstructions;
-
-  let inputText = `CURRENT_VEGA_LITE_SPEC:\n${currentSpec}\n\nUSER_MESSAGE:\n${chatMessage}`;
-
-  const instructions = await sendPrompt(promptText, {inputText});
-
-  return instructions;
 }
 
 /**
@@ -238,25 +258,17 @@ async function interpretInstructions(currentSpec: string, chatMessage: string) {
  */
 export async function sketchToSpec(payload: any): Promise<string> {
 
-  // 1: Send the image to analyze
-
   const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
 
-  const imageElements = await analyzeSketchFromScratch(imageUrl);
+  // 1: Send the sketch to be translated into a spec
 
-  // 2: Send the elements to generate a Vega-Lite spec
+  const initialSpec = await analyzeSketchFromScratch(imageUrl, payload.columnNames);
 
-  const initialSpec = await elementsToVegaLite(imageElements);
+  // 2: Review the generated spec
 
-  // 3: Match fields to the column names
+  const reviewedSpec = await compareSpecToSketch(initialSpec, imageUrl);
 
-  const specWithColumns = await matchColumnNames(payload.columnNames, initialSpec);
-
-  // 4: Validate the final spec
-
-  const finalSpec = await reviewFinalOutput(specWithColumns);
-
-  return finalSpec;
+  return reviewedSpec;
 }
 
 /**
@@ -269,33 +281,21 @@ export async function applyAnnotations(payload: any): Promise<string> {
 
   const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
 
-  // 1: Send the annotated sketch for analysis
+  // 1: Send the annotations to be translated into an updated spec
 
-  const instructions = await analyzeAnnotatedSketch(currentSpec, imageUrl);
+  const updatedSpec = await analyzeAnnotatedSketch(currentSpec, imageUrl, payload.columnNames);
 
-  // 2: Translate the instructions into specific changes to the Vega-Lite spec
+  // 2: Review the updated spec
 
-  const changesToMake = await interpretInstructions(currentSpec, instructions);
+  const reviewedSpec = await compareSpecToAnnotations(updatedSpec, imageUrl);
 
-  // 3: Apply the changes to the spec
-
-  const updatedSpec = await applyInstructions(currentSpec, changesToMake);
-
-  // 4: Match the fields to column names
-
-  const specWithColumns = await matchColumnNames(payload.columnNames, updatedSpec);
-
-  // 5: Validate final spec
-
-  const finalSpec = await reviewFinalOutput(specWithColumns);
-
-  return finalSpec;
+  return reviewedSpec;
 
 }
 
 
 /**
- * Server-side OpenAI helper.
+ * Server-side helper.
  * Given a Vega-Lite spec and a user message, returns a corresponding spec applying the user's message
  */
 export async function sendChat(payload: any): Promise<string> {
@@ -303,22 +303,14 @@ export async function sendChat(payload: any): Promise<string> {
   const currentSpec = payload.currentSpec;
   const chatMessage = payload.chatMessage;
 
-  // 1: Turn the user message into specific instructions
+  // 1: Apply the desired changes to the spec
 
-  const instructions = await interpretInstructions(currentSpec, chatMessage);
+  const updatedSpec = await applyChatMessage(currentSpec, chatMessage);
 
-  // 2: Send the instructions for changes to apply
+  // 2: Review the updated spec
 
-  const updatedSpec = await applyInstructions(currentSpec, instructions);
+  const reviewedSpec = await compareSpecToInstructions(currentSpec, updatedSpec, chatMessage);
 
-  // 3: Match the fields to column names
-
-  const specWithColumns = await matchColumnNames(payload.columnNames, updatedSpec);
-
-  // 4: Validate final spec
-
-  const finalSpec = await reviewFinalOutput(specWithColumns);
-
-  return finalSpec;
+  return reviewedSpec;
 
 }
