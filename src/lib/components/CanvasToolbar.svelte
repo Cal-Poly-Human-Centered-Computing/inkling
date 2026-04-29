@@ -1,11 +1,14 @@
 <script lang="ts">
-	import Fa from 'svelte-fa';
-	import {faUndo, faRedo, faPen, faFont, faEraser, faSync} from '@fortawesome/free-solid-svg-icons';
+		  import Fa from 'svelte-fa';
+		  import {faUndo, faRedo, faPen, faFont, faEraser} from '@fortawesome/free-solid-svg-icons';
 	import { createEventDispatcher } from 'svelte';
 	import {faMousePointer} from "@fortawesome/free-solid-svg-icons/faMousePointer";
-	import {faRotateLeft} from "@fortawesome/free-solid-svg-icons/faRotateLeft";
-	const dispatch = createEventDispatcher();
-	export let selected: 'pen' | 'textbox' | 'eraser' | 'selector' = 'pen';
+
+		  const dispatch = createEventDispatcher();
+		  export let selected: 'pen' | 'textbox' | 'eraser' | 'selector' = 'pen';
+		  // brush controls (bindable from parent)
+		  export let brushColor: string = '#ff0000';
+		  export let brushWidth: number = 3;
 
 	function select(t: 'pen' | 'textbox' | 'eraser' | 'selector') {
 		selected = t;
@@ -64,6 +67,14 @@
 			</button>
 		</div>
 	</div>
+
+		<!-- Brush controls: color and size -->
+		<div style="display:flex; align-items:center; gap:8px; padding-left:8px;">
+			<label for="brush-color" style="font-size:12px; color:var(--text-muted, #333);">Color</label>
+			<input id="brush-color" type="color" bind:value={brushColor} aria-label="Brush color" />
+			<label for="brush-size" style="font-size:12px; color:var(--text-muted, #333); padding-left:6px;">Size</label>
+			<input id="brush-size" type="range" min="1" max="40" bind:value={brushWidth} aria-label="Brush size" />
+		</div>
 </div>
 
 <style>
