@@ -234,6 +234,107 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		}
 	}
 
+	// record strokes into the strokes store when a path is created by the pencil brush
+	function handlePathCreated(event: any) {
+		try {
+			const pathObj = event.path || event.target;
+			const pathData: any[] = (pathObj && (pathObj.path || pathObj._path)) || [];
+			const pts: Array<{x:number,y:number}> = [];
+			for (const seg of pathData) {
+				if (Array.isArray(seg) && (typeof seg[1] === 'number') && (typeof seg[2] === 'number')) {
+					pts.push({ x: seg[1], y: seg[2] });
+				}
+			}
+
+			// Update store and log the new value immediately
+			strokes.update(s => {
+				const next = [...s, pts];
+				return next;
+			});
+
+		} catch (err) {
+			console.error('handlePathCreated error', err);
+		}
+	}
+
+	// handle adding textboxes when the textbox tool is selected
+	function createTextboxAt(x: number, y: number) {
+		if (!fabricCanvas) return null;
+		editingText = true;
+		const id = 'text-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+		const itext: any = new IText('Text', {
+			left: x,
+			top: y,
+			fontSize: 16,
+			fill: '#000000',
+			fontFamily: 'Arial',
+			editable: true,
+			selectable: true,
+		});
+		itext.on('editing:exited', function() {
+			if (itext.text.trim() === '') {
+				fabricCanvas.remove(itext);
+			}
+			console.log('User finished editing:', itext.text);
+		});
+		// attach a stable id so we can sync later
+		(itext as any).__customId = id;
+		fabricCanvas.add(itext);
+		fabricCanvas.setActiveObject(itext);
+		try {
+			itext.enterEditing();
+			itext.selectAll();
+		} catch (err) { /* some Fabric builds may not support enterEditing immediately */ }
+		fabricCanvas.requestRenderAll();
+		// update texts store once
+		syncTextsFromCanvas();
+		return itext;
+	}
+
+	function syncTextsFromCanvas() {
+		if (!fabricCanvas) return;
+		const objs = fabricCanvas.getObjects().filter((o: any) => o.type === 'i-text' || o instanceof IText);
+		const out = objs.map((o: any) => ({
+			id: o.__customId || (o as any).uid || String(o.__uniqueId || (o.left + '-' + o.top)),
+			x: o.left,
+			y: o.top,
+			text: o.text || o.textLines && o.textLines.join('\n') || '' ,
+			width: o.width,
+			height: o.height,
+			fontSize: String(o.fontSize),
+			fontFamily: o.fontFamily,
+			fontWeight: o.fontWeight,
+			fontStyle: o.fontStyle
+		}));
+		texts.set(out as any);
+	}
+
+	function handleCanvasMouseDown(opt: any) {
+		try {
+			if (selectedTool !== 'textbox') return;
+
+			if (editingText) {
+				editingText = false;
+				return;
+			}
+
+			// if clicking on an existing object, and it's text, enter editing
+			if (opt.target) {
+				const target = opt.target;
+				if (target && (target.type === 'i-text' || target instanceof IText)) {
+					fabricCanvas.setActiveObject(target);
+					try { target.enterEditing(); target.selectAll(); } catch (err) {}
+					return;
+				}
+			}
+			const pointer = opt.viewportPoint;
+			if (!pointer) return;
+			createTextboxAt(pointer.x, pointer.y);
+		} catch (err) {
+			console.error('handleCanvasMouseDown error', err);
+		}
+	}
+
 	onMount(async () => {
 		if (!fabricCanvasEl) return;
 		// create Fabric canvas
@@ -258,109 +359,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			console.warn('failed to initialize PencilBrush', err);
 		}
 
-		// record strokes into the strokes store when a path is created by the pencil brush
-		function handlePathCreated(event: any) {
-			try {
-				const pathObj = event.path || event.target;
-				const pathData: any[] = (pathObj && (pathObj.path || pathObj._path)) || [];
-				const pts: Array<{x:number,y:number}> = [];
-				for (const seg of pathData) {
-					if (Array.isArray(seg) && (typeof seg[1] === 'number') && (typeof seg[2] === 'number')) {
-						pts.push({ x: seg[1], y: seg[2] });
-					}
-				}
-
-				// Update store and log the new value immediately
-				strokes.update(s => {
-					const next = [...s, pts];
-					return next;
-				});
-
-			} catch (err) {
-				console.error('handlePathCreated error', err);
-			}
-		}
-
-		// attach handler
 		fabricCanvas.on('path:created', handlePathCreated);
-
-		// handle adding textboxes when the textbox tool is selected
-		function createTextboxAt(x: number, y: number) {
-			if (!fabricCanvas) return null;
-			editingText = true;
-			const id = 'text-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
-			const itext: any = new IText('Text', {
-				left: x,
-				top: y,
-				fontSize: 16,
-				fill: '#000000',
-				fontFamily: 'Arial',
-				editable: true,
-				selectable: true,
-			});
-			itext.on('editing:exited', function() {
-				if (itext.text.trim() === '') {
-					fabricCanvas.remove(itext);
-				}
-				console.log('User finished editing:', itext.text);
-			});
-			// attach a stable id so we can sync later
-			(itext as any).__customId = id;
-			fabricCanvas.add(itext);
-			fabricCanvas.setActiveObject(itext);
-			try {
-				itext.enterEditing();
-				itext.selectAll();
-			} catch (err) { /* some Fabric builds may not support enterEditing immediately */ }
-			fabricCanvas.requestRenderAll();
-			// update texts store once
-			syncTextsFromCanvas();
-			return itext;
-		}
-
-		function syncTextsFromCanvas() {
-			if (!fabricCanvas) return;
-			const objs = fabricCanvas.getObjects().filter((o: any) => o.type === 'i-text' || o instanceof IText);
-			const out = objs.map((o: any) => ({
-				id: o.__customId || (o as any).uid || String(o.__uniqueId || (o.left + '-' + o.top)),
-				x: o.left,
-				y: o.top,
-				text: o.text || o.textLines && o.textLines.join('\n') || '' ,
-				width: o.width,
-				height: o.height,
-				fontSize: String(o.fontSize),
-				fontFamily: o.fontFamily,
-				fontWeight: o.fontWeight,
-				fontStyle: o.fontStyle
-			}));
-			texts.set(out as any);
-		}
-
-		function handleCanvasMouseDown(opt: any) {
-			try {
-				if (selectedTool !== 'textbox') return;
-
-				if (editingText) {
-					editingText = false;
-					return;
-				}
-
-				// if clicking on an existing object, and it's text, enter editing
-				if (opt.target) {
-					const target = opt.target;
-					if (target && (target.type === 'i-text' || target instanceof IText)) {
-						fabricCanvas.setActiveObject(target);
-						try { target.enterEditing(); target.selectAll(); } catch (err) {}
-						return;
-					}
-				}
-				const pointer = opt.viewportPoint;
-				if (!pointer) return;
-				createTextboxAt(pointer.x, pointer.y);
-			} catch (err) {
-				console.error('handleCanvasMouseDown error', err);
-			}
-		}
 
 		// wire up mouse handler
 		fabricCanvas.on('mouse:down', handleCanvasMouseDown);
