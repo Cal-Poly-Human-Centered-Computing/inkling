@@ -197,6 +197,40 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		}
 	}
 
+	function handleKeydown(e: KeyboardEvent) {
+		// ignore typing in inputs/textareas or contenteditable elements
+		const target = e.target as HTMLElement | null;
+		if (target) {
+			const tag = target.tagName;
+			const isEditable = target.getAttribute('contenteditable') === 'true';
+			if (tag === 'INPUT' || tag === 'TEXTAREA' || isEditable) return;
+		}
+
+		if (e.key === 'Delete' || e.key === 'Backspace') {
+			if (!fabricCanvas) return;
+
+			let activeObjects = fabricCanvas.getActiveObjects();
+
+			if (!activeObjects || activeObjects.length === 0) return;
+
+			// Remove objects from canvas
+			try {
+				fabricCanvas.remove(...activeObjects);
+
+				// discard selection and re-render
+				fabricCanvas.discardActiveObject();
+
+				// render update
+				fabricCanvas.requestRenderAll();
+
+				// record the change so undo/redo can pick it up (see notes below)
+				snapshot();
+			} catch (err) {
+				console.error('Failed to delete selected objects', err);
+			}
+		}
+	}
+
 	onMount(async () => {
 		if (!fabricCanvasEl) return;
 		// create Fabric canvas
@@ -255,6 +289,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 		// keep canvas sized on window resize
 		window.addEventListener('resize', resize);
+		// handle delete/backspace for deleting selected objects
+		window.addEventListener('keydown', handleKeydown);
 
 	});
 
@@ -262,6 +298,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		// cleanup listeners and dispose fabric canvas
 		try {
 			window.removeEventListener('resize', resize);
+			window.removeEventListener('keydown', handleKeydown);
 			if (fabricCanvas) {
 				fabricCanvas.off && fabricCanvas.off('path:created');
 				// dispose/remove canvas to avoid memory leaks (method name varies by Fabric version)
