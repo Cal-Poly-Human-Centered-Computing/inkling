@@ -15,8 +15,8 @@
 	export let applying: boolean = false;
 
 	// brush settings
-	let brushColor: string = '#ff0000';
-	let brushWidth: number = 3;
+	let brushColor: string;
+	let brushWidth: number;
 
 	// selected tool state
 	let selectedTool: 'pen' | 'textbox' | 'selector' | 'eraser' = 'pen';
