@@ -1,18 +1,25 @@
 <script lang="ts">
-		  import Fa from 'svelte-fa';
-		  import {faUndo, faRedo, faPen, faFont, faEraser} from '@fortawesome/free-solid-svg-icons';
+	import Fa from 'svelte-fa';
+	import {faUndo, faRedo, faPen, faFont} from '@fortawesome/free-solid-svg-icons';
 	import { createEventDispatcher } from 'svelte';
 	import {faMousePointer} from "@fortawesome/free-solid-svg-icons/faMousePointer";
+	import {faTrashCan} from "@fortawesome/free-solid-svg-icons/faTrashCan";
 
-		  const dispatch = createEventDispatcher();
-		  export let selected: 'pen' | 'textbox' | 'eraser' | 'selector' = 'pen';
-		  // brush controls (bindable from parent)
-		  export let brushColor: string = '#ff0000';
-		  export let brushWidth: number = 1;
+	const dispatch = createEventDispatcher();
+	export let selected: 'pen' | 'textbox' | 'selector' = 'pen';
+	// brush controls (bindable from parent)
+	export let brushColor: string = '#ff0000';
+	export let brushWidth: number = 1;
 
-	function select(t: 'pen' | 'textbox' | 'eraser' | 'selector') {
+	export let enableDelete: boolean = false;
+
+	function select(t: 'pen' | 'textbox' | 'selector') {
 		selected = t;
 		dispatch('selectTool', t);
+	}
+
+	function deleteSelectedObject() {
+		dispatch('delete');
 	}
 
 	function undo() {
@@ -60,9 +67,9 @@
 					<Fa icon={faFont} />
 				</span>
 			</button>
-			<button class="button toolbar-button" on:click={() => select('eraser')} aria-label="Eraser tool" aria-pressed={selected === 'eraser'} class:has-text-weight-bold={selected === 'eraser'} class:tool-active={selected === 'eraser'}>
+			<button class="button toolbar-button" on:click={() => deleteSelectedObject()} aria-label="Delete" disabled="{!enableDelete}">
 				<span class="icon toolbar-icon">
-					<Fa icon={faEraser} />
+					<Fa icon={faTrashCan} />
 				</span>
 			</button>
 		</div>

@@ -19,13 +19,24 @@
 	let brushWidth: number;
 
 	// selected tool state
-	let selectedTool: 'pen' | 'textbox' | 'selector' | 'eraser' = 'pen';
+	let selectedTool: 'pen' | 'textbox' | 'selector' = 'pen';
 
 	let editingText: boolean = false;
+	let objectSelected: boolean = false;
 
 	function handleSelectTool(e: CustomEvent) {
 		selectedTool = e.detail;
 		updateToolMode();
+	}
+
+	function deleteSelectedObject() {
+		fabricCanvas.getActiveObjects().forEach((object: any) => {
+			fabricCanvas.remove(object);
+		})
+		fabricCanvas.discardActiveObject();
+		fabricCanvas.renderAll();
+
+		objectSelected = false;
 	}
 
 	function updateToolMode() {
@@ -48,10 +59,6 @@
 			fabricCanvas.selection = false;
 			fabricCanvas.getObjects().forEach((o: any) => (o.selectable = true));
 			try { fabricCanvas.defaultCursor = 'text'; } catch (err) {}
-		} else if (selectedTool === 'eraser') {
-			fabricCanvas.isDrawingMode = false;
-			fabricCanvas.selection = false;
-			fabricCanvas.getObjects().forEach((o: any) => (o.selectable = true));
 		}
 	}
 
@@ -231,6 +238,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			} catch (err) {
 				console.error('Failed to delete selected objects', err);
 			}
+			objectSelected = false;
 		}
 	}
 
@@ -335,6 +343,14 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		}
 	}
 
+	function handleSelectionCreated(opt: any) {
+		objectSelected = true;
+	}
+
+	function handleSelectionCleared(opt: any) {
+		objectSelected = false;
+	}
+
 	onMount(async () => {
 		if (!fabricCanvasEl) return;
 		// create Fabric canvas
@@ -363,6 +379,10 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 		// wire up mouse handler
 		fabricCanvas.on('mouse:down', handleCanvasMouseDown);
+
+		fabricCanvas.on('selection:created', handleSelectionCreated)
+
+		fabricCanvas.on('selection:cleared', handleSelectionCleared)
 
 		// sync texts when objects are modified or removed
 		fabricCanvas.on('object:modified', (e: any) => {
@@ -504,7 +524,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 <div class="box" style="height:100%; position:relative; display:flex; flex-direction:column;" bind:this={boxEl}>
 
 	<div style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 20px 20px 0 20px; z-index:10000;">
-		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} on:selectTool={handleSelectTool} on:undo={undo} on:redo={redo} />
+		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete="{objectSelected}"
+					   on:selectTool={handleSelectTool} on:delete={deleteSelectedObject} on:undo={undo} on:redo={redo} />
 	</div>
 
 	<!-- Fabric.js canvas (annotation surface). Vega embed will be added later underneath this layer. -->
