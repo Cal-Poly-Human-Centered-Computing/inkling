@@ -12,6 +12,8 @@
 	export let brushWidth: number = 1;
 
 	export let enableDelete: boolean = false;
+	export let disableUndo: boolean = true;
+	export let disableRedo: boolean = true;
 
 	function select(t: 'pen' | 'textbox' | 'selector') {
 		selected = t;

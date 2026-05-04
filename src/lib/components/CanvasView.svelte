@@ -125,8 +125,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		}
 	}
 
-	const strokes = writable<Array<Array<{x:number,y:number}>>>([]);
-	const texts = writable<Array<{id:string,x:number,y:number,text:string,width?:number,height?:number,fontSize?:string,fontFamily?:string,fontWeight?:string,fontStyle?:string}>>([]);
+	// const strokes = writable<Array<Array<{x:number,y:number}>>>([]);
+	// const texts = writable<Array<{id:string,x:number,y:number,text:string,width?:number,height?:number,fontSize?:string,fontFamily?:string,fontWeight?:string,fontStyle?:string}>>([]);
 
 	// track each series of edits before/between changes applied
 	export let historyStacks: Array<Array<string>> = [];
@@ -134,51 +134,46 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	// track where we are in currentHistoryStack
 	export let historyIndex = -1;
 
+	let disableUndo = true;
+	let disableRedo = true;
+
 	function snapshot() {
-		// serialize strokes and texts
-		let s: any[] = [];
-		strokes.subscribe(v => s = v)();
-		let t: any[] = [];
-		texts.subscribe(v => t = v)();
-		// include Fabric canvas JSON if available so we can restore annotation state
-		let fabricState: any = null;
-		try {
-			if (fabricCanvas && typeof fabricCanvas.toJSON === 'function') {
-				fabricState = fabricCanvas.toJSON();
-			}
-		} catch (err) { /* ignore */ }
-		const snap = JSON.stringify({ strokes: s, texts: t, fabric: fabricState });
+		const snap = JSON.stringify(fabricCanvas);
 		// trim future redo history
 		currentHistoryStack = currentHistoryStack.slice(0, historyIndex + 1);
 		currentHistoryStack.push(snap);
 		historyIndex = currentHistoryStack.length - 1;
+		disableUndo = false;
+		disableRedo = true;
 	}
 
 	export function undo() {
+		console.log('history before undo: ', currentHistoryStack);
 		if (historyIndex <= 0) return;
 		historyIndex--;
 		restore(currentHistoryStack[historyIndex]);
+		if (historyIndex == -1) {
+			disableUndo = true;
+		}
+		console.log('history after undo: ', currentHistoryStack);
+
 	}
 
 	export function redo() {
 		if (historyIndex >= currentHistoryStack.length - 1) return;
 		historyIndex++;
 		restore(currentHistoryStack[historyIndex]);
+		if (historyIndex === currentHistoryStack.length - 1) {
+			disableRedo = true;
+		}
 	}
 
-	function restore(snapStr: string) {
+	function restore(snap: string) {
 		try {
-			const obj = JSON.parse(snapStr);
-			strokes.set(obj.strokes || []);
-			texts.set(obj.texts || []);
-			// restore fabric canvas if present
-			try {
-				if (obj.fabric && fabricCanvas && typeof fabricCanvas.loadFromJSON === 'function') {
-					fabricCanvas.loadFromJSON(obj.fabric, () => {
-						fabricCanvas.renderAll();
-					});
-				}
-			} catch (err) {  }
+			fabricCanvas.clear();
+			fabricCanvas.renderAll();
+			// restore canvas state
+			fabricCanvas.loadFromJSON(snap).then(() => fabricCanvas.requestRenderAll());
 		} catch (err) {
 			console.warn('failed to restore snapshot', err);
 		}
@@ -242,29 +237,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		}
 	}
 
-	// record strokes into the strokes store when a path is created by the pencil brush
-	function handlePathCreated(event: any) {
-		try {
-			const pathObj = event.path || event.target;
-			const pathData: any[] = (pathObj && (pathObj.path || pathObj._path)) || [];
-			const pts: Array<{x:number,y:number}> = [];
-			for (const seg of pathData) {
-				if (Array.isArray(seg) && (typeof seg[1] === 'number') && (typeof seg[2] === 'number')) {
-					pts.push({ x: seg[1], y: seg[2] });
-				}
-			}
-
-			// Update store and log the new value immediately
-			strokes.update(s => {
-				const next = [...s, pts];
-				return next;
-			});
-
-		} catch (err) {
-			console.error('handlePathCreated error', err);
-		}
-	}
-
 	// handle adding textboxes when the textbox tool is selected
 	function createTextboxAt(x: number, y: number) {
 		if (!fabricCanvas) return null;
@@ -294,27 +266,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			itext.selectAll();
 		} catch (err) { /* some Fabric builds may not support enterEditing immediately */ }
 		fabricCanvas.requestRenderAll();
-		// update texts store once
-		syncTextsFromCanvas();
+		snapshot();
 		return itext;
-	}
-
-	function syncTextsFromCanvas() {
-		if (!fabricCanvas) return;
-		const objs = fabricCanvas.getObjects().filter((o: any) => o.type === 'i-text' || o instanceof IText);
-		const out = objs.map((o: any) => ({
-			id: o.__customId || (o as any).uid || String(o.__uniqueId || (o.left + '-' + o.top)),
-			x: o.left,
-			y: o.top,
-			text: o.text || o.textLines && o.textLines.join('\n') || '' ,
-			width: o.width,
-			height: o.height,
-			fontSize: String(o.fontSize),
-			fontFamily: o.fontFamily,
-			fontWeight: o.fontWeight,
-			fontStyle: o.fontStyle
-		}));
-		texts.set(out as any);
 	}
 
 	function handleCanvasMouseDown(opt: any) {
@@ -375,7 +328,12 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			console.warn('failed to initialize PencilBrush', err);
 		}
 
-		fabricCanvas.on('path:created', handlePathCreated);
+		snapshot();
+		disableUndo = true;
+
+		// snapshot whenever something is added or changed
+		fabricCanvas.on('object:modified', snapshot)
+		fabricCanvas.on('path:created', snapshot);
 
 		// wire up mouse handler
 		fabricCanvas.on('mouse:down', handleCanvasMouseDown);
@@ -383,16 +341,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		fabricCanvas.on('selection:created', handleSelectionCreated)
 
 		fabricCanvas.on('selection:cleared', handleSelectionCleared)
-
-		// sync texts when objects are modified or removed
-		fabricCanvas.on('object:modified', (e: any) => {
-			editingText = true;
-			syncTextsFromCanvas();
-		});
-		fabricCanvas.on('object:removed', (e: any) => {
-			syncTextsFromCanvas();
-		});
-
 
 		// Call resize after layout settles; use multiple strategies to be robust
 		tick().then(() => {
@@ -429,17 +377,13 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 	// Exported helper: clear all overlays (strokes and texts) and snapshot the cleared state
 	function clearOverlays() {
-		// clear stores
-		strokes.set([]);
-		texts.set([]);
 		// remove all objects from the Fabric canvas
 		if (fabricCanvas) {
 			fabricCanvas.clear();
-			// reapply background if needed
+			// reapply background
 			try { fabricCanvas.backgroundColor = '#ffffff'; } catch (err) {}
 			fabricCanvas.renderAll();
 		}
-		snapshot();
 	}
 
 	export function applyChanges() {
@@ -525,7 +469,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 	<div style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 20px 20px 0 20px; z-index:10000;">
 		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete="{objectSelected}"
-					   on:selectTool={handleSelectTool} on:delete={deleteSelectedObject} on:undo={undo} on:redo={redo} />
+					   on:selectTool={handleSelectTool} on:delete={deleteSelectedObject}
+					   on:undo={undo} disableUndo={disableUndo} on:redo={redo} disableRedo={disableRedo} />
 	</div>
 
 	<!-- Fabric.js canvas (annotation surface). Vega embed will be added later underneath this layer. -->
