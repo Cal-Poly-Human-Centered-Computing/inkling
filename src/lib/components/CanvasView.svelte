@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { onMount, onDestroy, tick } from 'svelte';
-	import {get, writable} from 'svelte/store';
+	// no store helpers required here; `code` store is imported directly below
 	import { code } from "$lib/stores/code";
 	import {CanvasToolbar} from "$lib/components/index";
 	import Fa from 'svelte-fa';
 	import {faSpinner} from "@fortawesome/free-solid-svg-icons/faSpinner";
-	import {Canvas, IText, PencilBrush} from 'fabric';
+	import {Canvas, FabricImage, IText, PencilBrush} from 'fabric';
 
 	// Fabric.js canvas references
 	let fabricCanvas: any = null;
 	let fabricCanvasEl: HTMLCanvasElement | null = null;
 	let boxEl: HTMLDivElement | null = null;
+	let toolbarEl: HTMLDivElement | null = null;
 
 	export let applying: boolean = false;
 
@@ -81,9 +82,78 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	let lastScheduledSpecStr: string | null = null;
 	let lastRenderedSpecStr: string | null = null;
 
+	let backgroundImg: any = null;
+
 	async function doRenderSpec() {
-		// Vega rendering is currently disabled — CanvasView is using Fabric.js only.
-		return;
+		// Render the Vega-Lite spec from the `code` store into an SVG,
+		// then set that SVG as the Fabric canvas background so strokes/text
+		// remain on top. Uses dynamic import of vega-embed to avoid SSR issues.
+		if (typeof window === 'undefined' || !fabricCanvas) return;
+
+		const specAny: any = $code;
+
+		// if code store is a string, try to parse it as JSON; otherwise pass through
+		let specToUse: any = specAny;
+		if (typeof specAny === 'string') {
+			try { specToUse = JSON.parse(specAny); } catch (err) { specToUse = specAny; }
+		}
+
+		try {
+			// dynamic import to avoid bundling/SSR issues
+			const embedModule = await import('vega-embed');
+			const vegaEmbed = (embedModule && (embedModule.default || embedModule)) as any;
+
+			// create an offscreen container for embed
+			const off = document.createElement('div');
+			// embed the spec as SVG
+			await vegaEmbed(off, specToUse, { renderer: 'svg', actions: false });
+
+			const svgEl = off.querySelector('svg') as SVGElement | null;
+			if (!svgEl) throw new Error('vega-embed produced no SVG element');
+
+			baseSvg = svgEl;
+
+			// Serialize SVG to a data URL
+			const serializer = new XMLSerializer();
+			let svgStr = serializer.serializeToString(svgEl);
+			if (!svgStr.includes('xmlns')) svgStr = svgStr.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+			if (!svgStr.includes('xmlns:xlink')) svgStr = svgStr.replace('<svg', '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
+			const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+
+
+			FabricImage.fromURL(svgDataUrl).then((img: any) => {
+				const canvasW = fabricCanvas.getWidth();
+				const toolbarHeight = toolbarEl ? toolbarEl.getBoundingClientRect().height : 0;
+				const canvasH = fabricCanvas.getHeight() - toolbarHeight;
+
+				// anchor top-left and prevent interaction
+				img.set({
+					originX: 'center',
+					originY: 'center',
+					left: canvasW / 2,
+					top: (canvasH / 2) + toolbarHeight,
+				});
+
+				if (img.width > canvasW) {
+					console.log('scaling to width')
+					img.scaleToWidth(canvasW)
+				}
+				if (img.height > canvasH && img.height > img.width) {
+					console.log('scaling to height')
+					img.scaleToHeight(canvasH)
+				}
+
+				fabricCanvas.backgroundImage = img;
+				backgroundImg = img;
+
+				fabricCanvas.requestRenderAll();
+			});
+
+		} catch (err) {
+			console.error('doRenderSpec error', err);
+			baseSvg = null;
+			throw err;
+		}
 	}
 
 	function scheduleRender() {
@@ -197,6 +267,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 			if (typeof fabricCanvas.calcOffset === 'function') fabricCanvas.calcOffset();
 			fabricCanvas.renderAll();
+			// re-render background to match new canvas size
+			try { doRenderSpec().catch(() => {}); } catch (err) {}
 		} catch (err) {
 			// ignore resize errors
 		}
@@ -379,10 +451,15 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	function clearOverlays() {
 		// remove all objects from the Fabric canvas
 		if (fabricCanvas) {
-			fabricCanvas.clear();
-			// reapply background
-			try { fabricCanvas.backgroundColor = '#ffffff'; } catch (err) {}
-			fabricCanvas.renderAll();
+			// remove only objects so we keep backgroundImage/backgroundColor intact
+			try {
+				const objs = (fabricCanvas.getObjects && fabricCanvas.getObjects()) ? fabricCanvas.getObjects().slice() : [];
+				objs.forEach((o: any) => fabricCanvas.remove(o));
+				fabricCanvas.requestRenderAll();
+			} catch (err) {
+				// fallback to clear if something goes wrong
+				try { fabricCanvas.clear(); fabricCanvas.requestRenderAll(); } catch (e) {}
+			}
 		}
 	}
 
@@ -467,7 +544,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 <div class="box" style="height:100%; position:relative; display:flex; flex-direction:column;" bind:this={boxEl}>
 
-	<div style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 20px 20px 0 20px; z-index:10000;">
+	<div bind:this={toolbarEl} style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 20px 20px 0 20px; z-index:10000;">
 		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete="{objectSelected}"
 					   on:selectTool={handleSelectTool} on:delete={deleteSelectedObject}
 					   on:undo={undo} disableUndo={disableUndo} on:redo={redo} disableRedo={disableRedo} />
