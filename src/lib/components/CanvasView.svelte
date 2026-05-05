@@ -494,15 +494,66 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	 * @throws Error when export fails (including canvas taint due to cross-origin content)
 	 */
 	export async function exportCanvasDataUrl(mime: string = 'image/png', quality?: number, scale?: number): Promise<string> {
-		if (fabricCanvas && typeof fabricCanvas.toDataURL === 'function') {
-			const s = scale ?? (window.devicePixelRatio || 1);
-			try {
-				return fabricCanvas.toDataURL({ format: mime.split('/')[1] || 'png', multiplier: s, quality });
-			} catch (err) {
-				throw new Error('exportCanvasDataUrl: failed to export - ' + String(err));
-			}
+		if (!fabricCanvas) throw new Error('exportCanvasDataUrl: no fabric canvas available to export');
+
+		const format = (mime.split('/')[1] || 'png');
+		const multiplier = scale ?? (window.devicePixelRatio || 1);
+
+		// Commit any active IText editing: try to exit editing on any IText objects
+		try {
+			fabricCanvas.getObjects().forEach((o: any) => {
+				// Some Fabric builds expose `isEditing`/`exitEditing`/`enterEditing`
+				try {
+					if (o && typeof o.exitEditing === 'function') {
+						// if enterEditing was called earlier, exit now to commit text
+						try { o.exitEditing(); } catch (e) {}
+					}
+					// fallback: blur active element to commit native edits
+				} catch (e) {}
+			});
+		} catch (err) {
+			// ignore
 		}
-		throw new Error('exportCanvasDataUrl: no fabric canvas available to export');
+
+		// Ensure any active object selection is discarded so objects render in final state
+		try { fabricCanvas.discardActiveObject(); } catch (e) {}
+
+		// If we have a cached background image, ensure it's positioned/scaled to the current canvas size
+		try {
+			if (backgroundImg && fabricCanvas) {
+				const canvasW = fabricCanvas.getWidth();
+				const canvasH = fabricCanvas.getHeight();
+
+				// use center/contain scaling (preserve aspect ratio)
+				const imgW = (typeof backgroundImg.width === 'number' && backgroundImg.width > 0) ? backgroundImg.width : ((backgroundImg.getScaledWidth && backgroundImg.getScaledWidth()) || 1);
+				const imgH = (typeof backgroundImg.height === 'number' && backgroundImg.height > 0) ? backgroundImg.height : ((backgroundImg.getScaledHeight && backgroundImg.getScaledHeight()) || 1);
+				const scaleFactor = Math.min(canvasW / imgW, canvasH / imgH) || 1;
+
+				backgroundImg.set({ originX: 'center', originY: 'center', left: Math.round(canvasW / 2), top: Math.round(canvasH / 2) });
+				backgroundImg.scaleX = backgroundImg.scaleY = scaleFactor;
+				(backgroundImg as any).canvas = fabricCanvas;
+				fabricCanvas.backgroundImage = backgroundImg;
+			}
+		} catch (err) {
+			// ignore background reposition failures
+		}
+
+		// Render and export
+		try {
+			// ensure final render
+			try { fabricCanvas.requestRenderAll(); } catch (e) { try { fabricCanvas.renderAll(); } catch (e) {} }
+
+			// Fabric's toDataURL will include backgroundImage/backgroundColor and all objects
+			const dataUrl = fabricCanvas.toDataURL({ format, multiplier, quality });
+			return dataUrl;
+		} catch (err) {
+			// Provide a helpful error when canvas is tainted due to cross-origin resources
+			const msg = String(err || 'unknown error');
+			if (/taint|security|cross-origin|domexception/i.test(msg)) {
+				throw new Error('exportCanvasDataUrl: export failed due to cross-origin-tainted canvas. Ensure all images/resources are served with CORS headers or are inlined. Original error: ' + msg);
+			}
+			throw new Error('exportCanvasDataUrl: failed to export - ' + msg);
+		}
 	}
 
 </script>
