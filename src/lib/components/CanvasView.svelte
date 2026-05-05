@@ -208,6 +208,10 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	let disableRedo = true;
 
 	function snapshot() {
+		const background = fabricCanvas.backgroundImage;
+
+		fabricCanvas.backgroundImage = null;
+
 		const snap = JSON.stringify(fabricCanvas);
 		// trim future redo history
 		currentHistoryStack = currentHistoryStack.slice(0, historyIndex + 1);
@@ -215,18 +219,17 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		historyIndex = currentHistoryStack.length - 1;
 		disableUndo = false;
 		disableRedo = true;
+
+		fabricCanvas.backgroundImage = background;
 	}
 
 	export function undo() {
-		console.log('history before undo: ', currentHistoryStack);
 		if (historyIndex <= 0) return;
 		historyIndex--;
 		restore(currentHistoryStack[historyIndex]);
 		if (historyIndex == -1) {
 			disableUndo = true;
 		}
-		console.log('history after undo: ', currentHistoryStack);
-
 	}
 
 	export function redo() {
@@ -241,9 +244,14 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	function restore(snap: string) {
 		try {
 			fabricCanvas.clear();
-			fabricCanvas.renderAll();
 			// restore canvas state
-			fabricCanvas.loadFromJSON(snap).then(() => fabricCanvas.requestRenderAll());
+			fabricCanvas.loadFromJSON(snap).then(() => {
+				if (backgroundImg) {
+					backgroundImg.canvas = fabricCanvas;
+					fabricCanvas.backgroundImage = backgroundImg;
+				}
+				fabricCanvas.requestRenderAll()
+			});
 		} catch (err) {
 			console.warn('failed to restore snapshot', err);
 		}
@@ -518,30 +526,10 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		// Ensure any active object selection is discarded so objects render in final state
 		try { fabricCanvas.discardActiveObject(); } catch (e) {}
 
-		// If we have a cached background image, ensure it's positioned/scaled to the current canvas size
-		try {
-			if (backgroundImg && fabricCanvas) {
-				const canvasW = fabricCanvas.getWidth();
-				const canvasH = fabricCanvas.getHeight();
-
-				// use center/contain scaling (preserve aspect ratio)
-				const imgW = (typeof backgroundImg.width === 'number' && backgroundImg.width > 0) ? backgroundImg.width : ((backgroundImg.getScaledWidth && backgroundImg.getScaledWidth()) || 1);
-				const imgH = (typeof backgroundImg.height === 'number' && backgroundImg.height > 0) ? backgroundImg.height : ((backgroundImg.getScaledHeight && backgroundImg.getScaledHeight()) || 1);
-				const scaleFactor = Math.min(canvasW / imgW, canvasH / imgH) || 1;
-
-				backgroundImg.set({ originX: 'center', originY: 'center', left: Math.round(canvasW / 2), top: Math.round(canvasH / 2) });
-				backgroundImg.scaleX = backgroundImg.scaleY = scaleFactor;
-				(backgroundImg as any).canvas = fabricCanvas;
-				fabricCanvas.backgroundImage = backgroundImg;
-			}
-		} catch (err) {
-			// ignore background reposition failures
-		}
-
 		// Render and export
 		try {
 			// ensure final render
-			try { fabricCanvas.requestRenderAll(); } catch (e) { try { fabricCanvas.renderAll(); } catch (e) {} }
+			fabricCanvas.requestRenderAll();
 
 			// Fabric's toDataURL will include backgroundImage/backgroundColor and all objects
 			const dataUrl = fabricCanvas.toDataURL({ format, multiplier, quality });
