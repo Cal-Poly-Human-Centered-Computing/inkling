@@ -1,15 +1,27 @@
 <script lang="ts">
 	import Fa from 'svelte-fa';
-	import {faUndo, faRedo, faPen, faFont, faEraser, faSync} from '@fortawesome/free-solid-svg-icons';
+	import {faUndo, faRedo, faPen, faFont} from '@fortawesome/free-solid-svg-icons';
 	import { createEventDispatcher } from 'svelte';
 	import {faMousePointer} from "@fortawesome/free-solid-svg-icons/faMousePointer";
-	import {faRotateLeft} from "@fortawesome/free-solid-svg-icons/faRotateLeft";
-	const dispatch = createEventDispatcher();
-	export let selected: 'pen' | 'textbox' | 'eraser' | 'selector' = 'pen';
+	import {faTrashCan} from "@fortawesome/free-solid-svg-icons/faTrashCan";
 
-	function select(t: 'pen' | 'textbox' | 'eraser' | 'selector') {
+	const dispatch = createEventDispatcher();
+	export let selected: 'pen' | 'textbox' | 'selector' = 'pen';
+	// brush controls (bindable from parent)
+	export let brushColor: string = '#ff0000';
+	export let brushWidth: number = 1;
+
+	export let enableDelete: boolean = false;
+	export let disableUndo: boolean = true;
+	export let disableRedo: boolean = true;
+
+	function select(t: 'pen' | 'textbox' | 'selector') {
 		selected = t;
 		dispatch('selectTool', t);
+	}
+
+	function deleteSelectedObject() {
+		dispatch('delete');
 	}
 
 	function undo() {
@@ -57,13 +69,21 @@
 					<Fa icon={faFont} />
 				</span>
 			</button>
-			<button class="button toolbar-button" on:click={() => select('eraser')} aria-label="Eraser tool" aria-pressed={selected === 'eraser'} class:has-text-weight-bold={selected === 'eraser'} class:tool-active={selected === 'eraser'}>
+			<button class="button toolbar-button" on:click={() => deleteSelectedObject()} aria-label="Delete" disabled="{!enableDelete}">
 				<span class="icon toolbar-icon">
-					<Fa icon={faEraser} />
+					<Fa icon={faTrashCan} />
 				</span>
 			</button>
 		</div>
 	</div>
+
+		<!-- Brush controls: color and size -->
+		<div style="display:flex; align-items:center; gap:8px; padding-left:8px;">
+			<label for="brush-color" style="font-size:12px; color:var(--text-muted, #333);">Color</label>
+			<input id="brush-color" type="color" bind:value={brushColor} aria-label="Brush color" />
+			<label for="brush-size" style="font-size:12px; color:var(--text-muted, #333); padding-left:6px;">Size</label>
+			<input id="brush-size" type="range" min=".5" max="20" bind:value={brushWidth} aria-label="Brush size" />
+		</div>
 </div>
 
 <style>
