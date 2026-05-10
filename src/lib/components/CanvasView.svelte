@@ -152,6 +152,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		} catch (err) {
 			console.error('doRenderSpec error', err);
 			baseSvg = null;
+			fabricCanvas.backgroundImage = null;
+			fabricCanvas.requestRenderAll();
 			throw err;
 		}
 	}
@@ -247,6 +249,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			// restore canvas state
 			fabricCanvas.loadFromJSON(snap).then(() => {
 				if (backgroundImg) {
+					// since this is only used for undo/redo which only affect canvas markup,
+					// keep the rendered visualization the same
 					backgroundImg.canvas = fabricCanvas;
 					fabricCanvas.backgroundImage = backgroundImg;
 				}
@@ -475,6 +479,10 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	export function rollbackChanges() {
 		let restoredHistoryStack = historyStacks.pop() ?? [];
 		let lastIndexBeforeChangesApplied = restoredHistoryStack.length - 1;
+		if (lastIndexBeforeChangesApplied >= 0) {
+			let snap = restoredHistoryStack[lastIndexBeforeChangesApplied];
+			backgroundImg = JSON.parse(snap).backgroundImage;
+		}
 		restore(restoredHistoryStack[lastIndexBeforeChangesApplied]);
 		historyIndex = lastIndexBeforeChangesApplied;
 		currentHistoryStack = restoredHistoryStack;
@@ -499,22 +507,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 		const format = (mime.split('/')[1] || 'png');
 		const multiplier = scale ?? (window.devicePixelRatio || 1);
-
-		// Commit any active IText editing: try to exit editing on any IText objects
-		try {
-			fabricCanvas.getObjects().forEach((o: any) => {
-				// Some Fabric builds expose `isEditing`/`exitEditing`/`enterEditing`
-				try {
-					if (o && typeof o.exitEditing === 'function') {
-						// if enterEditing was called earlier, exit now to commit text
-						try { o.exitEditing(); } catch (e) {}
-					}
-					// fallback: blur active element to commit native edits
-				} catch (e) {}
-			});
-		} catch (err) {
-			// ignore
-		}
 
 		// Ensure any active object selection is discarded so objects render in final state
 		try { fabricCanvas.discardActiveObject(); } catch (e) {}
