@@ -458,17 +458,10 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	// Exported helper: clear all overlays (strokes and texts) and snapshot the cleared state
 	function clearOverlays() {
 		// remove all objects from the Fabric canvas
-		if (fabricCanvas) {
-			// remove only objects so we keep backgroundImage/backgroundColor intact
-			try {
-				const objs = (fabricCanvas.getObjects && fabricCanvas.getObjects()) ? fabricCanvas.getObjects().slice() : [];
-				objs.forEach((o: any) => fabricCanvas.remove(o));
-				fabricCanvas.requestRenderAll();
-			} catch (err) {
-				// fallback to clear if something goes wrong
-				try { fabricCanvas.clear(); fabricCanvas.requestRenderAll(); } catch (e) {}
-			}
-		}
+		const objs = (fabricCanvas.getObjects && fabricCanvas.getObjects()) ? fabricCanvas.getObjects().slice() : [];
+		objs.forEach((o: any) => fabricCanvas.remove(o));
+		fabricCanvas.requestRenderAll();
+		snapshot()
 	}
 
 	export function applyChanges() {
