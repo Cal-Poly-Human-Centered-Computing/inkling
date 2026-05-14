@@ -1,4 +1,6 @@
 const prompts = {
+    system: `You are an expert in data visualization and Vega-Lite.`,
+
     initialize: `You are a Vega-Lite expert assistant. Your job is to generate or update valid Vega-Lite JSON specifications based on user sketches, annotations, and instructions.`,
 
     analyzeSketchFromScratch: `You are a data visualization expert assistant. Your job is to translate hand-drawn sketches into components that another agent can turn into Vega-Lite code.
@@ -32,19 +34,12 @@ Respond only with the Vega-Lite JSON spec.`,
     - The spec must be as simple as possible while still accurately representing the visualization and preserving any specified styling; there should not be unnecessarily duplicated code.
     - The spec must not contain any comments.`,
 
-    analyzeAnnotatedSketch: `You are a data visualization and Vega-Lite expert assistant. Your job is to translate annotations into a high-level description of what the author intends to change about the visualization.
-    The input text contains a Vega-Lite specification, CURRENT_VEGA_LITE_SPEC. The attached image shows the rendering of CURRENT_VEGA_LITE_SPEC, with the author's annotations on top. 
-   
-    Compare CURRENT_VEGA_LITE_SPEC to the image; what additions or edits have been made in the image (can be hand-drawn pen strokes and/or typed text) that are not present in the spec?
-    Rather than strictly literal interpretation of the strokes, try to infer the author's intent for what changes they want to make to the visualization.
-    Assume an element and its styling already present in the spec should not be changed, unless it has been EXPLICITLY annotated.
-    Do not be strict when interpreting detail in the hand-drawn annotated strokes (curvature, thickness, etc).
+    analyzeAnnotatedSketch: `The attached image is a rendering of the below Vega-Lite spec, with annotations on top (can be hand-drawn pen strokes and/or typed text). 
+    Your job is to translate the annotations into a high-level description of what the author intends to change about the visualization.
+    To do this, observe each element present in the image. For each element, determine whether it is already present in CURRENT_VEGA_LITE_SPEC.
+    Any element that is not present in CURRENT_VEGA_LITE_SPEC, or is present but has been explicitly modified in the image, is an intended change.
     
-    Respond with a high-level, concise description of the overall intended changes to the visualization. 
-    For example: "Add a regression line on "horsepower". Change the color of the points according to their "origin" value."
-    Do not be ambiguous; if there are multiple possibilities for the author's intent, choose the one that is most likely to be correct.
-    
-    If the author's intent cannot be determined, respond with "Do not make any changes."`,
+    Respond with only a high-level, concise description of the overall intended changes to the visualization.`,
 
     applyInstructions: `The provided text input contains a Vega-Lite specification, CURRENT_VEGA_LITE_SPEC, followed by instructions for specific changes to make.
     

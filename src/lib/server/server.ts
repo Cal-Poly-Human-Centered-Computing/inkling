@@ -62,7 +62,7 @@ async function sendOpenAIPrompt(promptText: string, opts: { inputText?: string; 
   let input: ResponseInput = [
     {
       role: "developer",
-      content: promptText
+      content: prompts.system
     }
   ];
 
@@ -71,7 +71,7 @@ async function sendOpenAIPrompt(promptText: string, opts: { inputText?: string; 
 
   if (inputText) {
     userContent.push({
-      type: "input_text", text: inputText
+      type: "input_text", text: `${promptText}\n\n${inputText}`,
     })
   }
 
