@@ -69,11 +69,21 @@
 					<Fa icon={faFont} />
 				</span>
 			</button>
-			<button class="button toolbar-button" on:click={() => deleteSelectedObject()} aria-label="Delete" disabled="{!enableDelete}">
-				<span class="icon toolbar-icon">
-					<Fa icon={faTrashCan} />
-				</span>
-			</button>
+				<!-- Keep the button in the DOM so other buttons keep their positions; hide/disable it when no selection -->
+				<button
+					class="button toolbar-button"
+					on:click={deleteSelectedObject}
+					aria-label="Delete"
+					disabled={!enableDelete}
+					aria-hidden={!enableDelete}
+					aria-disabled={!enableDelete}
+					tabindex={enableDelete ? 0 : -1}
+					class:invisible={!enableDelete}
+				>
+					<span class="icon toolbar-icon">
+						<Fa icon={faTrashCan} />
+					</span>
+				</button>
 		</div>
 	</div>
 
@@ -146,5 +156,11 @@
 	/* Slight transition for visual feedback */
 	:global(.toolbar-button) {
 		transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+	}
+
+	/* When the delete button is not enabled, keep its space but hide it visually */
+	:global(.toolbar-button.invisible) {
+		visibility: hidden;
+		pointer-events: none;
 	}
 </style>
