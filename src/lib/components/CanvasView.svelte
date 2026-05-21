@@ -43,6 +43,8 @@
 		fabricCanvas.renderAll();
 
 		objectSelected = false;
+
+		snapshot();
 	}
 
 	function updateToolMode() {
