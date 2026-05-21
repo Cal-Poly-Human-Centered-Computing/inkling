@@ -22,6 +22,11 @@
 	// selected tool state
 	let selectedTool: 'pen' | 'textbox' | 'selector' = 'pen';
 
+	// small SVG pen cursor (inline data URL) - use a solid/filled pen icon so the cursor appears filled.
+	// Fallback to 'crosshair' if not supported.
+	const _penCursorSvg = encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="black" stroke="none"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>');
+	const PEN_CURSOR = `url("data:image/svg+xml;utf8,${_penCursorSvg}") 3 20, auto`;
+
 	let editingText: boolean = false;
 	let objectSelected: boolean = false;
 
@@ -49,10 +54,15 @@
 				fabricCanvas.freeDrawingBrush.color = brushColor;
 				fabricCanvas.freeDrawingBrush.width = brushWidth * ratio;
 			}
+			// show a pen-style cursor while in drawing mode. Use fabric.js cursor properties if available;
+			fabricCanvas.freeDrawingCursor = PEN_CURSOR;
+			fabricCanvas.defaultCursor = PEN_CURSOR;
 			fabricCanvas.selection = false;
 			fabricCanvas.getObjects().forEach((o: any) => (o.selectable = false));
 		} else if (selectedTool === 'selector') {
 			fabricCanvas.isDrawingMode = false;
+			fabricCanvas.freeDrawingCursor = 'crosshair';
+			fabricCanvas.defaultCursor = 'crosshair';
 			fabricCanvas.selection = true;
 			fabricCanvas.getObjects().forEach((o: any) => (o.selectable = true));
 		} else if (selectedTool === 'textbox') {
@@ -412,6 +422,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			console.warn('failed to initialize PencilBrush', err);
 		}
 
+			// Ensure the canvas cursor/tool mode matches the selected tool on mount
+			updateToolMode();
 		snapshot();
 		disableUndo = true;
 
@@ -569,7 +581,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 <div class="box" style="height:100%; position:relative; display:flex; flex-direction:column;" bind:this={boxEl}>
 
 	<div bind:this={toolbarEl} style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 20px 20px 0 20px; z-index:10000;">
-		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete="{objectSelected}"
+		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete={objectSelected}
 					   on:selectTool={handleSelectTool} on:delete={deleteSelectedObject}
 					   on:undo={undo} disableUndo={disableUndo} on:redo={redo} disableRedo={disableRedo} />
 	</div>
