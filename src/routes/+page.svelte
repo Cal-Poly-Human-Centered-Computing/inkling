@@ -27,10 +27,9 @@
     // Block additional sends while waiting for the server
     if (chatSending) return;
     chatSending = true;
+    applying = true;
 
     const bodyPayload: any = { currentSpec: get(codeStore), chatMessage: e.detail, columnNames: getColumnNames() };
-
-    console.log(bodyPayload);
 
     try {
       const resp = await fetch('/api/send-chat', {
@@ -55,6 +54,7 @@
       await handleIncomingCodeUpdate(resultText);
     } finally {
       chatSending = false;
+      applying = false;
     }
   }
 
