@@ -100,7 +100,7 @@
 	const schema = "https://vega.github.io/schema/vega-lite/v6.json";
 	let data: any = null;
 
-	let specBeforeAppliedChanges: string = ''
+	let specHistory: string[] = []
 
 	function getReadonlyText() {
 		let str = JSON.stringify({"$schema": schema, "data": data}, null, "  ");
@@ -209,6 +209,7 @@
 		const initialContents = getReadonlyText();
 
 		codeStore.set(initialContents);
+		specHistory.push(initialContents);
 		const state = await createNewEditorState(initialContents);
 
 		console.log(getColumnNames().join(', '))
@@ -245,7 +246,7 @@
 	 */
 	export async function setCode(newCode: string) {
 		// save the current spec in case the user rolls back the applied changes
-		specBeforeAppliedChanges = editorView.state.doc.toString();
+		specHistory.push(editorView.state.doc.toString())
 
 		let finalObj: any = null;
 		let finalString = '';
@@ -290,11 +291,11 @@
 
 
 	export async function rollbackChanges() {
-		console.log(specBeforeAppliedChanges)
+		const specBeforeAppliedChanges = specHistory[specHistory.length - 1];
 		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: specBeforeAppliedChanges }});
 		const newState = await createNewEditorState(specBeforeAppliedChanges);
 		editorView.setState(newState)
-		specBeforeAppliedChanges = '';
+		specHistory.splice(specHistory.length - 1, 1)
 	}
 
 
