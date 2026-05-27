@@ -491,7 +491,11 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	}
 
 	export function rollbackChanges() {
-		let restoredHistoryStack = historyStacks.pop() ?? [];
+		// get the last stack (or empty)
+		const restoredHistoryStack = historyStacks.length > 0 ? historyStacks[historyStacks.length - 1] : [];
+		// remove the last stack by reassigning a new array (triggers Svelte reactivity)
+		historyStacks = historyStacks.slice(0, -1);
+
 		let lastIndexBeforeChangesApplied = restoredHistoryStack.length - 1;
 		if (lastIndexBeforeChangesApplied >= 0) {
 			let snap = restoredHistoryStack[lastIndexBeforeChangesApplied];
