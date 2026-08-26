@@ -3,6 +3,7 @@ import prompts from './prompts';
 import OpenAI from "openai";
 import type {ResponseInput, ResponseInputMessageContentList} from "openai/resources/responses/responses";
 import {Anthropic} from "@anthropic-ai/sdk";
+import {extractBase64} from "./utilities";
 
 if (!OPENAI_API_KEY) {
   throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY in your private environment.');
@@ -60,24 +61,12 @@ async function sendOpenAIPrompt(opts: { inputText?: string; imageUrl?: any }): P
   return res.output_text;
 }
 
-// For some reason the OpenAI API can handle the raw image URL, but the Claude API needs it without the prefix
-function extractBase64(dataUrl: string | null): string | null {
-  if (!dataUrl) return null;
-  if (typeof dataUrl !== 'string') return null;
-  // strip data:image/...;base64, prefix if present
-  const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
-  if (match) return match[2];
-  // if it already looks like base64, return it
-  const maybe = dataUrl.trim();
-  if (/^[A-Za-z0-9+/=\r\n]+$/.test(maybe)) return maybe.replace(/\r?\n/g, '');
-  return null;
-}
-
 async function sendClaudePrompt(opts: { inputText?: string; imageUrl?: any }): Promise<any> {
   const { inputText, imageUrl } = opts;
 
   console.log(inputText);
 
+  // For some reason the OpenAI API can handle the raw image URL, but the Claude API needs it without the prefix
   const base64 = extractBase64(imageUrl);
   if (imageUrl && !base64) {
     console.warn('[Claude] imageUrl present but could not normalize to base64; not sending image.');
