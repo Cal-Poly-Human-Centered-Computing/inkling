@@ -1,4 +1,5 @@
 import * as vegaLite from "vega-lite";
+import {logger, Warn} from "vega";
 
 export function extractBase64(dataUrl: string | null): string | null {
     if (!dataUrl) return null;
@@ -12,21 +13,32 @@ export function extractBase64(dataUrl: string | null): string | null {
     return null;
 }
 
-export function validateVegaLiteSpec(spec: unknown): { valid: boolean; errors: string[] } {
+function validateVegaLiteSpec(specString: string) {
+    const warnings: string[] = [];
+    const errors: string[] = [];
+
+    let spec;
     try {
-        // Basic shape guard first
-        if (!spec || typeof spec !== "object") {
-            return { valid: false, errors: ["Spec must be an object"] };
-        }
-
-        // Official validation path
-        vegaLite.compile(spec as any);
-
-        return { valid: true, errors: [] };
+        spec = JSON.parse(specString);
     } catch (err) {
         return {
             valid: false,
-            errors: [err instanceof Error ? err.message : String(err)],
+            errors: [`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`],
+            warnings
         };
+    }
+
+    const log = logger(Warn);
+    log.warn = (...args) => {
+        warnings.push(args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+        return log;
+    };
+
+    try {
+        vegaLite.compile(spec, { logger: log });
+        return { valid: errors.length === 0, errors, warnings };
+    } catch (err) {
+        errors.push(err instanceof Error ? err.message : String(err));
+        return { valid: false, errors, warnings };
     }
 }
