@@ -1,4 +1,4 @@
-import {CLAUDE_API_KEY, OPENAI_API_KEY, OPENAI_MODEL, CLAUDE_MODEL} from '$env/static/private';
+import {CLAUDE_API_KEY, ANTHROPIC_WORKSPACE_ID, CLAUDE_MODEL, OPENAI_API_KEY, } from '$env/static/private';
 import prompts from './prompts';
 import OpenAI from "openai";
 import type {ResponseInput, ResponseInputMessageContentList} from "openai/resources/responses/responses";
@@ -12,7 +12,11 @@ const openAI = new OpenAI({ apiKey: OPENAI_API_KEY });
 if (!CLAUDE_API_KEY) {
   throw new Error('Claude API key not configured. Set CLAUDE_API_KEY in your private environment.');
 }
-const claude = new Anthropic({ apiKey: CLAUDE_API_KEY });
+const claude = new Anthropic({
+  apiKey: CLAUDE_API_KEY,
+  defaultHeaders: {
+    "anthropic-workspace-id": ANTHROPIC_WORKSPACE_ID
+  } });
 
 // Choose which API to use: "openai" or "claude"
 const api = "claude";
