@@ -6,31 +6,22 @@
 	import { faCheck } from '@fortawesome/free-solid-svg-icons/faCheck';
 	import { code as codeStore } from '$lib/stores/code';
 	import {get} from "svelte/store";
-	import { EditorState, StateEffect, StateField } from '@codemirror/state';
-	import {
-		EditorView,
-		keymap,
-		Decoration,
-		WidgetType,
-		ViewPlugin,
-		gutter,
-		highlightActiveLineGutter
-	} from '@codemirror/view';
-	import { oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
-	import { json } from '@codemirror/lang-json';
-	import {defaultKeymap, history, historyKeymap, indentLess, indentMore} from "@codemirror/commands";
+	import type * as Monaco from 'monaco-editor';
 	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
 	import {getColumnNames, getDataToken, getFirstRow, setDataset} from "$lib/utils/datasetStore";
 	import { conversationId as convIdStore } from '$lib/stores/conversationId';
-	import {bracketMatching, syntaxHighlighting} from "@codemirror/language";
-	import readOnlyRangesExtension from "codemirror-readonly-ranges";
+	import constrainedEditor from 'constrained-editor-plugin';
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
 	let textareaFallback: HTMLTextAreaElement | null = null;
 	let editorMounted = false;
-	let editorView: any = null;
+	let monaco: typeof Monaco | null = null;
+	let editorView: Monaco.editor.IStandaloneCodeEditor | null = null;
+	let editorModel: Monaco.editor.ITextModel | null = null;
 	let containerPointerHandler: ((e: PointerEvent) => void) | null = null;
+	let ignoreModelChange = false;
+	let constrainedInstance: any = null;
 
 	// copy button state
 	let copied = false;
@@ -110,127 +101,108 @@
 		return str;
 	}
 
-	const getReadOnlyRanges = (targetState: any):Array<{from:number|undefined, to:number|undefined}> => {
-		const doc = targetState.doc;
-		const headerEndLine = Math.min(5, doc.lines);
-		return [
-			{
-				from: 0,
-				to: doc.line(headerEndLine).to
-			},
-			{
-				from: doc.line(doc.lines).from,
-				to: undefined // same as targetState.doc.line(targetState.doc.lines).to
-			}
-		]
-	}
-
-	// Decoration plugin: apply the `readonly-text` class to the first five lines
-	// and to the last line of the document. This is purely visual and complements the
-	// `readOnlyRangesExtension` (which enforces read-only behavior).
-	const headerFooterLineDecoration = ViewPlugin.fromClass(class {
-		decorations: any;
-		constructor(view: any) { this.decorations = this.buildDeco(view); }
-		update(update: any) {
-			if (update.docChanged || update.viewportChanged) this.decorations = this.buildDeco(update.view);
+	// Decorations for readonly lines (highlight only the text, not full-line)
+	let readonlyDecorationIds: string[] = [];
+	function updateReadonlyDecorations() {
+		if (!editorModel || !monaco) return;
+		const decos: import('monaco-editor').editor.IModelDeltaDecoration[] = [];
+		const lastLine = editorModel.getLineCount();
+		const headerMax = Math.min(5, lastLine);
+		for (let line = 1; line <= headerMax; line++) {
+			const content = editorModel.getLineContent(line);
+			const firstNonWs = content.search(/\S/);
+			if (firstNonWs === -1) continue; // skip empty lines
+			const lastNonWs = content.search(/\s*$/) - 1; // index of last non-whitespace
+			const startCol = firstNonWs + 1; // Monaco columns are 1-based
+			const endCol = Math.max(startCol, lastNonWs + 1 + 1); // +1 to convert index->col, +1 because end is exclusive
+			decos.push({
+				range: new monaco.Range(line, startCol, line, endCol),
+				options: { className: 'readonly-text-inline' }
+			});
 		}
-		buildDeco(view: any) {
-			const decos: any[] = [];
-			const seen = new Set<string>();
-			const doc = view.state.doc;
-			const maxHeader = Math.min(5, doc.lines);
-			for (let i = 1; i <= maxHeader; i++) {
-				const line = doc.line(i);
-				const from = line.from, to = line.to;
-				const key = `${from}-${to}`;
-				if (!seen.has(key)) {
-					seen.add(key);
-					decos.push(Decoration.mark({ class: 'readonly-text' }).range(from, to));
-				}
+		if (lastLine > headerMax) {
+			const content = editorModel.getLineContent(lastLine);
+			const firstNonWs = content.search(/\S/);
+			if (firstNonWs !== -1) {
+				const lastNonWs = content.search(/\s*$/) - 1;
+				const startCol = firstNonWs + 1;
+				const endCol = Math.max(startCol, lastNonWs + 1 + 1);
+				decos.push({
+					range: new monaco.Range(lastLine, startCol, lastLine, endCol),
+					options: { className: 'readonly-text-inline' }
+				});
 			}
-
-			// Last line
-			if (doc.lines >= 1) {
-				const lastLine = doc.line(doc.lines);
-				const from = lastLine.from, to = lastLine.to;
-				const key = `${from}-${to}`;
-				if (!seen.has(key)) {
-					seen.add(key);
-					decos.push(Decoration.mark({ class: 'readonly-text' }).range(from, to));
-				}
-			}
-
-			return Decoration.set(decos, true);
 		}
-	}, {
-		decorations: (v: any) => v.decorations
-	});
-
-	async function createNewEditorState(spec: string) {
-		const { jsonSchema } = await import('codemirror-json-schema');
-		const vegaLiteSchema = await (await fetch(schema)).json();
-		return EditorState.create({
-			doc: spec,
-			extensions: [
-				jsonSchema(vegaLiteSchema),
-				// Theme to make editor fill container and allow scrolling
-				EditorView.theme({
-					'&': { height: '100%', display: 'flex', flexDirection: 'column' },
-					'.cm-scroller': { flex: '1 1 auto', minHeight: '0', overflow: 'auto', overflowX: 'auto', overflowY: 'auto' },
-					'.cm-content': { whiteSpace: 'pre' },
-					'.cm-gutters': { flex: '0 0 auto' }
-				}),
-				history(),
-				gutter({ class: "CodeMirror-lint-markers" }),
-				bracketMatching(),
-				highlightActiveLineGutter(),
-				syntaxHighlighting(oneDarkHighlightStyle),
-				keymap.of([
-					...historyKeymap,
-					{ key: 'Tab', run: indentMore },
-					{ key: 'Shift-Tab', run: indentLess },
-					...defaultKeymap
-				]),
-				// write full JSON back to the shared store whenever doc changes
-				EditorView.updateListener.of((v: any) => {
-					if (v.docChanged) {
-						const text = v.state.doc.toString();
-						codeStore.set(text);
-					}
-				}),
-				// Add visual decoration for header/footer lines
-				headerFooterLineDecoration,
-				readOnlyRangesExtension(getReadOnlyRanges)
-			]
-		});
+		readonlyDecorationIds = editorModel.deltaDecorations(readonlyDecorationIds, decos as any);
 	}
 
 	async function initializeEditor() {
+		if (!monaco || !editorContainer) return;
 		const initialContents = getReadonlyText();
 
 		codeStore.set(initialContents);
 		specHistory.push(initialContents);
-		const state = await createNewEditorState(initialContents);
 
 		console.log(getColumnNames().join(', '))
 
 		if (editorView) {
-			editorView.destroy();
+			editorView.dispose();
 		}
-		editorView = new EditorView({
-			state,
-			parent: editorContainer
+
+		editorView = monaco.editor.create(editorContainer!, {
+			value: initialContents,
+			language: 'json',
+			automaticLayout: true,
+			minimap: { enabled: false },
+			scrollBeyondLastLine: false,
+			wordWrap: 'off',
+			tabSize: 2,
+			insertSpaces: true,
+			formatOnPaste: true,
+			formatOnType: true,
+			lineNumbersMinChars: 2,
+			glyphMargin: false,
+			lineDecorationsWidth: 4,
+			folding: false
+		});
+		monaco.editor.setTheme('vs-dark');
+
+		editorModel = editorView.getModel();
+		if (!editorModel) {
+			console.log('Failed to get editor model');
+			return;
+		}
+
+		constrainedInstance = constrainedEditor(monaco);
+		constrainedInstance.initializeIn(editorView);
+		// compute editable range: lines 6 .. second-to-last
+		const lastLine = editorModel.getLineCount();
+		const editableStart = 6;
+		const editableEnd = Math.max(editableStart, lastLine - 1);
+		if (editableEnd >= editableStart) {
+			constrainedInstance.addRestrictionsTo(editorModel, [{
+				range: [editableStart, 1, editableEnd, editorModel.getLineMaxColumn(editableEnd)],
+				allowMultiline: true,
+				label: 'editableVegaLite'
+			}]);
+		}
+		updateReadonlyDecorations();
+
+		editorView.onDidChangeModelContent((e: Monaco.editor.IModelContentChangedEvent) => {
+			codeStore.set(editorModel?.getValue() ?? '');
+			updateReadonlyDecorations();
 		});
 
 		// ensure clicking/tapping the editor container focuses the editor so the caret appears
 		if (editorContainer && editorView) {
-			containerPointerHandler = () => { try { editorView.focus(); } catch (_) {} };
+			containerPointerHandler = () => { try { editorView?.focus(); } catch (_) {} };
 			editorContainer.addEventListener('pointerdown', containerPointerHandler);
 		}
 	}
 
 	onMount(async () => {
 		if (!editorContainer) return;
+		monaco = await import('monaco-editor');
 
 		data = getDataToken();
 
@@ -246,7 +218,7 @@
 	 */
 	export async function setCode(newCode: string) {
 		// save the current spec in case the user rolls back the applied changes
-		specHistory.push(editorView.state.doc.toString())
+		specHistory.push(editorView?.getModel()?.getValue() ?? String(get(codeStore) || ''))
 
 		let finalObj: any = null;
 		let finalString = '';
@@ -254,7 +226,6 @@
 		console.log(newCode);
 
 		try {
-			// TODO: first attempt to parse newCode as JSON somewhere else, to guarantee that it is JSON when it gets here
 			const parsed = JSON.parse(newCode);
 			console.log(parsed);
 			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -275,10 +246,28 @@
 
 		// Update the shared store and editor doc
 		if (editorMounted && editorView) {
-			const newState = await createNewEditorState(finalString);
-			editorView.setState(newState)
+			ignoreModelChange = true;
+			editorView.getModel()?.setValue(finalString);
+			ignoreModelChange = false;
+			codeStore.set(finalString);
 
-			editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: finalString }});
+			// reapply constraints & decorations after replacing whole document
+			if (constrainedInstance && editorView.getModel()) {
+				const model = editorView.getModel()!;
+				const lastLine = model.getLineCount();
+				const editableStart = 6;
+				const editableEnd = Math.max(editableStart, lastLine - 1);
+				const restrictions: any[] = [];
+				if (editableEnd >= editableStart) {
+					restrictions.push({
+						range: [editableStart, 1, editableEnd, model.getLineMaxColumn(editableEnd)],
+						allowMultiline: true,
+						label: 'editableVegaLite'
+					});
+				}
+				if (restrictions.length) constrainedInstance.addRestrictionsTo(model, restrictions);
+				updateReadonlyDecorations();
+			}
 
 			if (textareaFallback) textareaFallback.value = finalString;
 			await tick();
@@ -292,9 +281,12 @@
 
 	export async function rollbackChanges() {
 		const specBeforeAppliedChanges = specHistory[specHistory.length - 1];
-		editorView.dispatch({ changes: { from: 0, to: editorView.state.doc.length, insert: specBeforeAppliedChanges }});
-		const newState = await createNewEditorState(specBeforeAppliedChanges);
-		editorView.setState(newState)
+		if (editorView?.getModel()) {
+			ignoreModelChange = true;
+			editorView.getModel()!.setValue(specBeforeAppliedChanges);
+			ignoreModelChange = false;
+			codeStore.set(specBeforeAppliedChanges);
+		}
 		specHistory.splice(specHistory.length - 1, 1)
 	}
 
@@ -309,7 +301,7 @@
 
 	onDestroy(() => {
 	    try {
-	        if (editorView && typeof editorView.destroy === 'function') editorView.destroy();
+	        if (editorView && typeof editorView.dispose === 'function') editorView.dispose();
 	    } catch (err) {}
 	    try {
 	        if (editorContainer && containerPointerHandler) editorContainer.removeEventListener('pointerdown', containerPointerHandler);
@@ -643,15 +635,11 @@
 		color: #eaeaea;
 	}
   }
-  :global(.readonly-text) {
-	  display: inline; /* allow fragmentation across lines */
-	  white-space: pre; /* preserve newlines */
-	  background: rgba(70,70,70,0.8);
-	  border-radius: 4px;
-	  -webkit-box-decoration-break: clone;
-	  box-decoration-break: clone;
-	  background-clip: padding-box;
-  }
+  :global(.readonly-text-inline) {
+  		background: rgba(128,128,128,0.22);
+  		border-radius: 4px;
+  		padding: 0 6px;
+  	}
 
   /* Copy button styles: positioned top-right inside .content and visible on hover/focus */
   .content {
