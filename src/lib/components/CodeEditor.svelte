@@ -20,7 +20,7 @@
 	import { json } from '@codemirror/lang-json';
 	import {defaultKeymap, history, historyKeymap, indentLess, indentMore} from "@codemirror/commands";
 	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
-	import {getColumnNames, getDataToken, getFirstRow, setDatasetFromDfd} from "$lib/utils/datasetStore";
+	import {getColumnNames, getDataToken, getFirstRow, setDataset} from "$lib/utils/datasetStore";
 	import { conversationId as convIdStore } from '$lib/stores/conversationId';
 	import {bracketMatching, syntaxHighlighting} from "@codemirror/language";
 	import readOnlyRangesExtension from "codemirror-readonly-ranges";
@@ -376,7 +376,7 @@
 				const res = await loadDatasetFromUrlHelper(datasetUrl);
 				console.log('Dataset loaded via helper:', res);
 
-				await setDatasetFromDfd(res.df, datasetUrl);
+				setDataset(res.data, res.columns, datasetUrl);
 
 				// reset the editor contents with the new dataset
 				await initializeEditor();
