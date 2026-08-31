@@ -1,4 +1,4 @@
-import {CLAUDE_API_KEY, ANTHROPIC_WORKSPACE_ID, CLAUDE_MODEL, OPENAI_API_KEY, } from '$env/static/private';
+import {CLAUDE_API_KEY, ANTHROPIC_WORKSPACE_ID, CLAUDE_MODEL, OPENAI_API_KEY, OPENAI_MODEL} from '$env/static/private';
 import prompts from './prompts';
 import OpenAI from "openai";
 import type {ResponseInput, ResponseInputMessageContentList} from "openai/resources/responses/responses";
