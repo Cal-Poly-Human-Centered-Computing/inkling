@@ -87,13 +87,14 @@
 		</div>
 	</div>
 
-		<!-- Brush controls: color and size -->
-		<div style="display:flex; align-items:center; gap:8px; padding-left:8px;">
-			<label for="brush-color" style="font-size:12px; color:var(--text-muted, #333);">Color</label>
-			<input id="brush-color" type="color" bind:value={brushColor} aria-label="Brush color" />
-			<label for="brush-size" style="font-size:12px; color:var(--text-muted, #333); padding-left:6px;">Size</label>
-			<input id="brush-size" type="range" min=".5" max="20" bind:value={brushWidth} aria-label="Brush size" />
-		</div>
+	<!-- Brush controls: color and size -->
+	<div style="display:flex; align-items:center; gap:8px; padding-left:8px;"
+	     class:invisible={selected !== 'pen'} aria-hidden={selected !== 'pen'} aria-disabled={selected !== 'pen'}>
+		<label for="brush-color" style="font-size:12px; color:var(--text-muted, #333);">Color</label>
+		<input id="brush-color" type="color" bind:value={brushColor} aria-label="Brush color" />
+		<label for="brush-size" style="font-size:12px; color:var(--text-muted, #333); padding-left:6px;">Size</label>
+		<input id="brush-size" type="range" min=".5" max="20" bind:value={brushWidth} aria-label="Brush size" />
+	</div>
 </div>
 
 <style>
@@ -160,6 +161,11 @@
 
 	/* When the delete button is not enabled, keep its space but hide it visually */
 	:global(.toolbar-button.invisible) {
+		visibility: hidden;
+		pointer-events: none;
+	}
+
+	:global(.invisible) {
 		visibility: hidden;
 		pointer-events: none;
 	}
