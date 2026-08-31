@@ -1,6 +1,4 @@
-// Helpers for persisting datasets to localStorage and rehydrating them as danfo DataFrames.
-// This module intentionally does not modify other files; it depends on the existing
-// `datasetLoader` serializer where helpful but is otherwise self-contained.
+// Helpers for persisting datasets (arrays of row objects) to localStorage and reading them back.
 
 export function getDataToken(): any {
   const dataset = readRaw()
@@ -13,8 +11,7 @@ export function getDataToken(): any {
 export type PersistedDataset = {
   url?: string;
   columns?: string[];
-  // either array-of-objects (toJSON) or 2D array values
-  data?: any[] | any[][];
+  data?: Record<string, any>[];
   timestamp?: number;
 };
 
@@ -38,7 +35,6 @@ function readRaw(): PersistedDataset | null {
 
 export function getColumnNames(): string[] {
     const payload = readRaw();
-    console.log(payload)
     if (payload && payload.columns) {
         return payload.columns;
     } else {
@@ -60,51 +56,20 @@ function writeRaw(payload: PersistedDataset | null) {
 }
 
 /**
- * Persist a danfo DataFrame (or dataframe-like object) to localStorage.
- * The function will attempt to serialize the DataFrame into a JSON-friendly
- * payload using common DataFrame shapes: `values` (2D array) or `toJSON()` (array of objects).
- * If neither is available, it will try to infer from the input object.
+ * Persist a dataset (array of row objects) to localStorage, along with its
+ * column names and optional source URL.
  *
  * Note: localStorage has size limits (~5MB). For larger datasets consider using
  * IndexedDB or not persisting the full dataset.
  */
-export async function setDatasetFromDfd(df: any, url?: string) {
+export function setDataset(data: Record<string, any>[], columns: string[], url?: string) {
   if (!isBrowser()) return;
-  if (!df && !url) return;
-
-  // Try to serialize using the DataFrame's preferred APIs
-  let columns: string[] | undefined;
-  let data: any[] | any[][] | undefined;
-
-  try {
-    // columns may be an array or a function
-    if (df && Array.isArray((df as any).columns)) columns = (df as any).columns;
-    else if (df && typeof (df as any).columns === 'function') columns = (df as any).columns();
-  } catch (err) {
-    columns = undefined;
-  }
-
-  try {
-    if (df && (df as any).values && Array.isArray((df as any).values)) {
-      data = (df as any).values;
-    } else if (df && typeof (df as any).toJSON === 'function') {
-      const j = (df as any).toJSON();
-      if (Array.isArray(j)) data = j;
-    }
-  } catch (err) {
-    data = undefined;
-  }
-
-  // Fallback: if df already looks like an array-of-objects
-  if (!data && Array.isArray(df) && df.length > 0 && typeof df[0] === 'object') {
-    data = df;
-    columns = columns ?? Object.keys(df[0]);
-  }
+  if (!data?.length && !url) return;
 
   const payload: PersistedDataset = {
     url: url ?? undefined,
-    columns: columns ?? undefined,
-    data: data ?? undefined,
+    columns: columns?.length ? columns : undefined,
+    data: data?.length ? data : undefined,
     timestamp: Date.now(),
   };
 
@@ -127,42 +92,6 @@ export function clearDatasetStore() {
   writeRaw(null);
 }
 
-/**
- * Rehydrate a danfo DataFrame from the persisted payload, if present.
- * Returns a DataFrame instance or null if nothing is stored or rehydration fails.
- *
- * This dynamically imports danfojs at runtime to reconstruct the DataFrame
- * (so the module is only loaded when needed).
- */
-export async function getDfdFromStore(): Promise<any | null> {
-  if (!isBrowser()) return null;
-
-  const payload = readRaw();
-  if (!payload || !payload.data) return null;
-
-  try {
-    const raw: any = await import('danfojs');
-    const dfd = raw && raw.default ? raw.default : raw;
-    if (!dfd || typeof dfd.DataFrame !== 'function') {
-      console.warn('datasetStore: danfojs DataFrame constructor not available when rehydrating');
-      return null;
-    }
-
-    // data may be array-of-objects or 2D array; construct accordingly
-    if (Array.isArray(payload.data) && payload.data.length > 0 && typeof payload.data[0] === 'object' && !Array.isArray(payload.data[0])) {
-      return new dfd.DataFrame(payload.data);
-    }
-
-    // else assume 2D values with optional columns
-    return new dfd.DataFrame(payload.data, { columns: payload.columns });
-  } catch (err) {
-    console.warn('datasetStore: failed to reconstruct DataFrame from store', err);
-    return null;
-  }
-}
-
-
-
 export function getFirstRow(): Record<string, any> | null {
   const payload = readRaw();
   if (!payload || !payload.data) return null;
@@ -171,32 +100,14 @@ export function getFirstRow(): Record<string, any> | null {
   if (!Array.isArray(data) || data.length === 0 || !columns || !columns.length) return null;
 
   const first = data[0];
+  if (typeof first !== 'object' || first === null) return null;
 
-  // case: array of objects (toJSON)
-  if (typeof first === 'object' && first !== null && !Array.isArray(first)) {
-    // preserve column order if provided
-    if (Array.isArray(columns) && columns.length > 0) {
-      const obj: Record<string, any> = {};
-      for (const col of columns) {
-        obj[col] = (first as Record<string, any>)[col];
-      }
-      return obj;
-    }
-    // return a shallow copy
-    return { ...(first as Record<string, any>) };
+  // preserve column order
+  const obj: Record<string, any> = {};
+  for (const col of columns) {
+    obj[col] = (first as Record<string, any>)[col];
   }
-
-  // case: 2D array of values
-  if (Array.isArray(first)) {
-    const values = first as any[];
-    const obj: Record<string, any> = {};
-    for (let i = 0; i < columns.length; i++) {
-      obj[columns[i]] = values[i];
-    }
-    return obj;
-  }
-
-  return null;
+  return obj;
 }
 
 
@@ -208,8 +119,7 @@ export function readPersistedDataset(): PersistedDataset | null {
 }
 
 // Exports summary:
-// - setDatasetFromDfd(df, url?)
+// - setDataset(data, columns, url?)
 // - setDatasetUrl(url)
-// - getDfdFromStore(): Promise<DataFrame | null>
 // - clearDatasetStore()
 // - readPersistedDataset()

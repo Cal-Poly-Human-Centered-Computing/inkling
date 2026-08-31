@@ -8,7 +8,7 @@
 	import {get} from "svelte/store";
 	import type * as Monaco from 'monaco-editor';
 	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
-	import {getColumnNames, getDataToken, getFirstRow, setDatasetFromDfd} from "$lib/utils/datasetStore";
+	import {getColumnNames, getDataToken, getFirstRow, setDataset} from "$lib/utils/datasetStore";
 	import { conversationId as convIdStore } from '$lib/stores/conversationId';
 	import constrainedEditor from 'constrained-editor-plugin';
 
@@ -368,7 +368,7 @@
 				const res = await loadDatasetFromUrlHelper(datasetUrl);
 				console.log('Dataset loaded via helper:', res);
 
-				await setDatasetFromDfd(res.df, datasetUrl);
+				setDataset(res.data, res.columns, datasetUrl);
 
 				// reset the editor contents with the new dataset
 				await initializeEditor();
