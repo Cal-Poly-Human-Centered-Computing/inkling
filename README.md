@@ -1,8 +1,11 @@
 ## Environment Setup
 
-This project uses a server-side OpenAI API key for the "Apply Changes" feature.
+This project uses a server-side Anthropic API key for the "Apply Changes" feature.
 
-- Copy `.env.example` to `.env` and set `OPENAI_API_KEY` to your key (do not commit `.env`).
+- Copy `.env.example` to `.env`.
+- Set `CLAUDE_API_KEY` to your key.
+- Set `ANTHROPIC_WORKSPACE_ID` to your workspace ID.
+- Do not commit `.env`.
 
 ## Running the project
 
