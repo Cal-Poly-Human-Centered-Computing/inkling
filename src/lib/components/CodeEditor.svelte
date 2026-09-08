@@ -265,6 +265,9 @@
 						label: 'editableVegaLite'
 					});
 				}
+				// clear old constraints first
+				constrainedInstance.removeRestrictionsIn(model);
+
 				if (restrictions.length) constrainedInstance.addRestrictionsTo(model, restrictions);
 				updateReadonlyDecorations();
 			}
