@@ -11,6 +11,9 @@
 	import {getColumnNames, getDataToken, getFirstRow, setDataset} from "$lib/utils/datasetStore";
 	import { conversationId as convIdStore } from '$lib/stores/conversationId';
 	import constrainedEditor from 'constrained-editor-plugin';
+	import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
+	import JsonWorker from 'monaco-editor/language/json/json.worker?worker';
+	import { diffLines } from 'diff';
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -22,6 +25,90 @@
 	let containerPointerHandler: ((e: PointerEvent) => void) | null = null;
 	let ignoreModelChange = false;
 	let constrainedInstance: any = null;
+
+	// Decorations added to indicate server-returned changes (cleared on next local edit)
+	let serverChangeDecorationIds: string[] = [];
+
+	function applyServerDiffDecorations(prevText: string, newText: string) {
+		if (!editorModel || !monaco) return;
+
+		const model = editorModel;
+		const parts = diffLines(prevText ?? '', newText ?? '');
+
+		let newLine = 1;
+
+		const decos: import('monaco-editor').editor.IModelDeltaDecoration[] = [];
+
+		const getLineCount = (value: string): number => {
+			if (!value) return 0;
+
+			const newlineCount = (value.match(/\n/g) ?? []).length;
+
+			// If it doesn't end in a newline, there's one additional line.
+			return newlineCount + (value.endsWith('\n') ? 0 : 1);
+		};
+
+		for (let i = 0; i < parts.length; i++) {
+			const part = parts[i];
+			const lineCount = getLineCount(part.value ?? '');
+
+			if (part.removed) {
+				// Don't decorate removals yet.
+				//
+				// Since this content doesn't exist in the new model,
+				// newLine must NOT advance.
+				continue;
+			}
+
+			if (part.added) {
+				const previousPart = parts[i - 1];
+
+				// jsdiff generally represents a modified line as:
+				//
+				// removed chunk
+				// added chunk
+				//
+				// So if this addition immediately follows a removal,
+				// treat the new lines as modified rather than purely added.
+				const isModified = previousPart?.removed === true;
+
+				if (lineCount > 0 && newLine <= model.getLineCount()) {
+					const startLine = newLine;
+					const endLine = Math.min(
+							model.getLineCount(),
+							newLine + lineCount - 1
+					);
+
+					decos.push({
+						range: new monaco.Range(
+								startLine,
+								1,
+								endLine,
+								model.getLineMaxColumn(endLine)
+						),
+						options: {
+							isWholeLine: true,
+							className: isModified
+									? 'server-modified'
+									: 'server-added'
+						}
+					});
+				}
+
+				newLine += lineCount;
+				continue;
+			}
+
+			// Unchanged content exists in the new document,
+			// so advance through it.
+			newLine += lineCount;
+		}
+
+		serverChangeDecorationIds = model.deltaDecorations(
+				serverChangeDecorationIds,
+				decos
+		);
+	}
 
 	// copy button state
 	let copied = false;
@@ -136,21 +223,33 @@
 		readonlyDecorationIds = editorModel.deltaDecorations(readonlyDecorationIds, decos as any);
 	}
 
-	async function initializeEditor() {
-		if (!monaco || !editorContainer) return;
-		const initialContents = getReadonlyText();
+	function initializeReadonlyParts() {
+		if (!editorModel || !monaco) return;
 
-		codeStore.set(initialContents);
-		specHistory.push(initialContents);
-
-		console.log(getColumnNames().join(', '))
-
-		if (editorView) {
-			editorView.dispose();
+		constrainedInstance = constrainedEditor(monaco);
+		constrainedInstance.initializeIn(editorView);
+		// compute editable range: lines 6 .. second-to-last
+		const lastLine = editorModel.getLineCount();
+		const editableStart = 6;
+		const editableEnd = Math.max(editableStart, lastLine - 1);
+		if (editableEnd >= editableStart) {
+			constrainedInstance.addRestrictionsTo(editorModel, [{
+				range: [editableStart, 1, editableEnd, editorModel.getLineMaxColumn(editableEnd)],
+				allowMultiline: true,
+				label: 'editableVegaLite'
+			}]);
 		}
+		updateReadonlyDecorations();
+	}
+
+	async function createEditor() {
+		if (!monaco || !editorContainer) return;
+		disposeEditor();
+
+		const contents = get(codeStore);
 
 		editorView = monaco.editor.create(editorContainer!, {
-			value: initialContents,
+			value: contents,
 			language: 'json',
 			automaticLayout: true,
 			minimap: { enabled: false },
@@ -173,24 +272,15 @@
 			return;
 		}
 
-		constrainedInstance = constrainedEditor(monaco);
-		constrainedInstance.initializeIn(editorView);
-		// compute editable range: lines 6 .. second-to-last
-		const lastLine = editorModel.getLineCount();
-		const editableStart = 6;
-		const editableEnd = Math.max(editableStart, lastLine - 1);
-		if (editableEnd >= editableStart) {
-			constrainedInstance.addRestrictionsTo(editorModel, [{
-				range: [editableStart, 1, editableEnd, editorModel.getLineMaxColumn(editableEnd)],
-				allowMultiline: true,
-				label: 'editableVegaLite'
-			}]);
-		}
-		updateReadonlyDecorations();
+		initializeReadonlyParts();
 
 		editorView.onDidChangeModelContent((e: Monaco.editor.IModelContentChangedEvent) => {
 			codeStore.set(editorModel?.getValue() ?? '');
 			updateReadonlyDecorations();
+			// clear server-change highlights when the user edits locally (unless the change was programmatic)
+			if (!ignoreModelChange && editorModel) {
+				serverChangeDecorationIds = editorModel.deltaDecorations(serverChangeDecorationIds, []);
+			}
 		});
 
 		// ensure clicking/tapping the editor container focuses the editor so the caret appears
@@ -198,6 +288,17 @@
 			containerPointerHandler = () => { try { editorView?.focus(); } catch (_) {} };
 			editorContainer.addEventListener('pointerdown', containerPointerHandler);
 		}
+	}
+
+	async function initializeEditor() {
+		disposeEditor();
+
+		const initialContents = getReadonlyText();
+
+		codeStore.set(initialContents);
+		specHistory.push(initialContents);
+
+		await createEditor();
 	}
 
 	onMount(async () => {
@@ -209,6 +310,17 @@
 		await initializeEditor();
 
 		editorMounted = true;
+
+		// initialize the worker
+		self.MonacoEnvironment = {
+			getWorker(_workerId: string, label: string) {
+				if (label === 'json') {
+					return new JsonWorker();
+				}
+
+				return new EditorWorker();
+			}
+		};
 	});
 
 	/**
@@ -270,6 +382,13 @@
 
 				if (restrictions.length) constrainedInstance.addRestrictionsTo(model, restrictions);
 				updateReadonlyDecorations();
+				// highlight what the server changed compared to the spec that was sent
+				try {
+					const prevSpec = specHistory[specHistory.length - 1] ?? '';
+					applyServerDiffDecorations(prevSpec, finalString);
+				} catch (err) {
+					console.error('Failed to compute server diff decorations', err);
+				}
 			}
 
 			if (textareaFallback) textareaFallback.value = finalString;
@@ -281,6 +400,20 @@
 		}
 	}
 
+	function disposeEditor() {
+		if (editorView) {
+			editorView.dispose();
+			editorView = null;
+		}
+		if (editorModel) {
+			editorModel.dispose();
+			editorModel = null;
+		}
+		readonlyDecorationIds = [];
+		if (constrainedInstance) {
+			constrainedInstance = null;
+		}
+	}
 
 	export async function rollbackChanges() {
 		const specBeforeAppliedChanges = specHistory[specHistory.length - 1];
@@ -643,6 +776,19 @@
   		border-radius: 4px;
   		padding: 0 6px;
   	}
+  /* server-returned change highlights */
+  :global(.server-added) {
+  	background: rgba(76,175,80,0.14);
+  	border-left: 3px solid rgba(76,175,80,0.9);
+  }
+  :global(.server-modified) {
+  	background: rgba(255,193,7,0.12);
+  	border-left: 3px solid rgba(255,193,7,0.9);
+  }
+  :global(.server-removed) {
+  	background: rgba(244,67,54,0.12);
+  	border-left: 3px solid rgba(244,67,54,0.9);
+  }
 
   /* Copy button styles: positioned top-right inside .content and visible on hover/focus */
   .content {
