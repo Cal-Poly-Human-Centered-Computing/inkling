@@ -51,6 +51,27 @@
       }
 
       const resultText: string = jsonResp.result ?? '';
+
+//       const resultText = `{
+//   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+//   "data": {
+//     "url": "https://vega.github.io/vega-datasets/data/cars.json"
+//   },
+//   "mark": "point",
+//   "encoding": {
+//     "x": {
+//       "field": "Horsepower",
+//       "type": "quantitative",
+//       "title": "Horsepower"
+//     },
+//     "y": {
+//       "field": "Miles_per_Gallon",
+//       "type": "quantitative",
+//       "title": "Miles per Gallon"
+//     }
+//   }
+// }`
+
       await handleIncomingCodeUpdate(resultText);
     } finally {
       chatSending = false;
