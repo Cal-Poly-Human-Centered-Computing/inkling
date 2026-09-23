@@ -85,17 +85,6 @@
 			}
 
 			if (part.added) {
-				const previousPart = parts[i - 1];
-
-				// jsdiff generally represents a modified line as:
-				//
-				// removed chunk
-				// added chunk
-				//
-				// So if this addition immediately follows a removal,
-				// treat the new lines as modified rather than purely added.
-				const isModified = previousPart?.removed === true;
-
 				if (lineCount > 0 && newLine <= model.getLineCount()) {
 					const startLine = newLine;
 					const endLine = Math.min(
@@ -112,9 +101,7 @@
 						),
 						options: {
 							isWholeLine: true,
-							className: isModified
-									? 'server-modified'
-									: 'server-added'
+							className: 'server-added'
 						}
 					});
 				}
@@ -889,10 +876,6 @@
   :global(.server-added) {
   	background: rgba(76,175,80,0.14);
   	border-left: 3px solid rgba(76,175,80,0.9);
-  }
-  :global(.server-modified) {
-  	background: rgba(255,193,7,0.12);
-  	border-left: 3px solid rgba(255,193,7,0.9);
   }
   :global(.server-removed-glyph) {
 	  position: relative;
