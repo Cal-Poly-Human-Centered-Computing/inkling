@@ -534,8 +534,10 @@
 	}
 
 	onDestroy(() => {
-		document?.removeEventListener('pointerdown', handleRemovedOverlayOutsidePointerDown);
-		try {
+		if (typeof document !== 'undefined') {
+			document.removeEventListener('pointerdown', handleRemovedOverlayOutsidePointerDown);
+		}
+	    try {
 	        if (editorView && typeof editorView.dispose === 'function') editorView.dispose();
 	    } catch (err) {}
 	    try {
@@ -543,7 +545,9 @@
 	    } catch (err) {}
 	    try {
 			// ensure any document listener used by the dataset help popover is removed
-			document?.removeEventListener('mousedown', handleDocClick);
+			if (typeof document !== 'undefined') {
+				document.removeEventListener('mousedown', handleDocClick);
+			}
 		} catch (err) {}
 	});
 
