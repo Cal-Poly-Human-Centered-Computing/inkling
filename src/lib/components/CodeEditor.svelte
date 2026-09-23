@@ -11,6 +11,9 @@
 	import {getColumnNames, getDataToken, getFirstRow, setDataset} from "$lib/utils/datasetStore";
 	import { conversationId as convIdStore } from '$lib/stores/conversationId';
 	import constrainedEditor from 'constrained-editor-plugin';
+	import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
+	import JsonWorker from 'monaco-editor/language/json/json.worker?worker';
+	import { diffLines } from 'diff';
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -22,6 +25,161 @@
 	let containerPointerHandler: ((e: PointerEvent) => void) | null = null;
 	let ignoreModelChange = false;
 	let constrainedInstance: any = null;
+
+	// Decorations added to indicate server-returned changes (cleared on next local edit)
+	let serverChangeDecorationIds: string[] = [];
+	type RemovedChunkInfo = { lineCount: number; text: string };
+	let removedDecorationById = new Map<string, RemovedChunkInfo>();
+	let removedLinesOverlay:
+		| { anchorLine: number; lineCount: number; text: string }
+		| null = null;
+	let removedOverlayWidget: Monaco.editor.IContentWidget | null = null;
+	let removedOverlayDomNode: HTMLDivElement | null = null;
+
+	function applyServerDiffDecorations(prevText: string, newText: string) {
+		if (!editorModel || !monaco) return;
+
+		const model = editorModel;
+		const parts = diffLines(prevText ?? '', newText ?? '');
+
+		let newLine = 1;
+
+		const decos: import('monaco-editor').editor.IModelDeltaDecoration[] = [];
+		const removedMetaByNewIndex = new Map<number, RemovedChunkInfo>();
+
+		const getLineCount = (value: string): number => {
+			if (!value) return 0;
+
+			const newlineCount = (value.match(/\n/g) ?? []).length;
+
+			// If it doesn't end in a newline, there's one additional line.
+			return newlineCount + (value.endsWith('\n') ? 0 : 1);
+		};
+
+		for (let i = 0; i < parts.length; i++) {
+			const part = parts[i];
+			const lineCount = getLineCount(part.value ?? '');
+
+			if (part.removed) {
+				const modelLineCount = model.getLineCount();
+				if (lineCount > 0 && modelLineCount > 0) {
+					const anchorLine = Math.min(Math.max(newLine, 1), modelLineCount);
+					decos.push({
+						range: new monaco.Range(anchorLine, 1, anchorLine, 1),
+						options: {
+							glyphMarginClassName: 'server-removed-glyph',
+							glyphMarginHoverMessage: {
+								value: `${lineCount} ${lineCount === 1 ? 'line' : 'lines'} removed`
+							},
+							hoverMessage: {
+								value: `${lineCount} ${lineCount === 1 ? 'line' : 'lines'} removed`
+							}
+						}
+					});
+					removedMetaByNewIndex.set(decos.length - 1, {
+						lineCount,
+						text: part.value ?? ''
+					});
+				}
+				continue;
+			}
+
+			if (part.added) {
+				if (lineCount > 0 && newLine <= model.getLineCount()) {
+					const startLine = newLine;
+					const endLine = Math.min(
+							model.getLineCount(),
+							newLine + lineCount - 1
+					);
+
+					decos.push({
+						range: new monaco.Range(
+								startLine,
+								1,
+								endLine,
+								model.getLineMaxColumn(endLine)
+						),
+						options: {
+							isWholeLine: true,
+							className: 'server-added'
+						}
+					});
+				}
+
+				newLine += lineCount;
+				continue;
+			}
+
+			// Unchanged content exists in the new document,
+			// so advance through it.
+			newLine += lineCount;
+		}
+
+		serverChangeDecorationIds = model.deltaDecorations(
+				serverChangeDecorationIds,
+				decos
+		);
+		removedDecorationById.clear();
+		for (const [newIndex, removedInfo] of removedMetaByNewIndex.entries()) {
+			const newId = serverChangeDecorationIds[newIndex];
+			if (newId) {
+				removedDecorationById.set(newId, removedInfo);
+			}
+		}
+	}
+
+	function closeRemovedLinesOverlay() {
+		if (editorView && removedOverlayWidget) {
+			editorView.removeContentWidget(removedOverlayWidget);
+		}
+		removedOverlayWidget = null;
+		removedOverlayDomNode = null;
+		removedLinesOverlay = null;
+	}
+
+	function showRemovedLinesOverlay(anchorLine: number, lineCount: number, text: string) {
+		if (!editorView || !monaco) return;
+		const monacoApi = monaco;
+
+		closeRemovedLinesOverlay();
+		removedLinesOverlay = { anchorLine, lineCount, text };
+		const domNode = document.createElement('div');
+		domNode.className = 'removed-lines-overlay';
+		domNode.innerHTML = `
+			<div class="removed-lines-overlay-title">${lineCount} ${lineCount === 1 ? 'line' : 'lines'} removed</div>
+			<pre class="removed-lines-overlay-content"></pre>
+		`;
+		const contentNode = domNode.querySelector('.removed-lines-overlay-content');
+		if (contentNode) contentNode.textContent = text;
+		removedOverlayDomNode = domNode;
+
+		const widgetId = `removed-lines-overlay-${Date.now()}`;
+		const widget: Monaco.editor.IContentWidget = {
+			getId: () => widgetId,
+			getDomNode: () => domNode,
+			getPosition: () => ({
+				position: {
+					lineNumber: anchorLine,
+					column: 1
+				},
+				preference: [monacoApi.editor.ContentWidgetPositionPreference.EXACT]
+			}),
+			allowEditorOverflow: true,
+			suppressMouseDown: true
+		};
+		removedOverlayWidget = widget;
+		editorView.addContentWidget(widget);
+	}
+
+	function handleRemovedOverlayOutsidePointerDown(e: PointerEvent) {
+		const target = e.target;
+		if (!(target instanceof Node)) return;
+
+		if (removedOverlayDomNode?.contains(target)) return;
+		if (target instanceof Element && target.closest('.server-removed-glyph')) return;
+
+		closeRemovedLinesOverlay();
+	}
 
 	// copy button state
 	let copied = false;
@@ -136,42 +294,8 @@
 		readonlyDecorationIds = editorModel.deltaDecorations(readonlyDecorationIds, decos as any);
 	}
 
-	async function initializeEditor() {
-		if (!monaco || !editorContainer) return;
-		const initialContents = getReadonlyText();
-
-		codeStore.set(initialContents);
-		specHistory.push(initialContents);
-
-		console.log(getColumnNames().join(', '))
-
-		if (editorView) {
-			editorView.dispose();
-		}
-
-		editorView = monaco.editor.create(editorContainer!, {
-			value: initialContents,
-			language: 'json',
-			automaticLayout: true,
-			minimap: { enabled: false },
-			scrollBeyondLastLine: false,
-			wordWrap: 'off',
-			tabSize: 2,
-			insertSpaces: true,
-			formatOnPaste: true,
-			formatOnType: true,
-			lineNumbersMinChars: 2,
-			glyphMargin: false,
-			lineDecorationsWidth: 4,
-			folding: false
-		});
-		monaco.editor.setTheme('vs-dark');
-
-		editorModel = editorView.getModel();
-		if (!editorModel) {
-			console.log('Failed to get editor model');
-			return;
-		}
+	function initializeReadonlyParts() {
+		if (!editorModel || !monaco) return;
 
 		constrainedInstance = constrainedEditor(monaco);
 		constrainedInstance.initializeIn(editorView);
@@ -187,10 +311,63 @@
 			}]);
 		}
 		updateReadonlyDecorations();
+	}
+
+	async function createEditor() {
+		if (!monaco || !editorContainer) return;
+		disposeEditor();
+
+		const contents = get(codeStore);
+
+		editorView = monaco.editor.create(editorContainer!, {
+			value: contents,
+			language: 'json',
+			automaticLayout: true,
+			minimap: { enabled: false },
+			scrollBeyondLastLine: false,
+			wordWrap: 'off',
+			tabSize: 2,
+			insertSpaces: true,
+			formatOnPaste: true,
+			formatOnType: true,
+			lineNumbersMinChars: 2,
+			glyphMargin: true,
+			lineDecorationsWidth: 4,
+			folding: false
+		});
+		monaco.editor.setTheme('vs-light');
+
+		editorModel = editorView.getModel();
+		if (!editorModel) {
+			console.log('Failed to get editor model');
+			return;
+		}
+
+		initializeReadonlyParts();
 
 		editorView.onDidChangeModelContent((e: Monaco.editor.IModelContentChangedEvent) => {
 			codeStore.set(editorModel?.getValue() ?? '');
 			updateReadonlyDecorations();
+			// clear server-change highlights when the user edits locally (unless the change was programmatic)
+			if (!ignoreModelChange && editorModel) {
+				serverChangeDecorationIds = editorModel.deltaDecorations(serverChangeDecorationIds, []);
+				removedDecorationById.clear();
+				closeRemovedLinesOverlay();
+			}
+		});
+		editorView.onMouseDown((e) => {
+			if (!editorView || !monaco) return;
+			if (e.target.type !== monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) return;
+			const lineNumber = e.target.position?.lineNumber;
+			if (!lineNumber) return;
+			const lineDecorations = editorModel?.getLineDecorations(lineNumber) ?? [];
+			for (const decoration of lineDecorations) {
+				const removedInfo = removedDecorationById.get(decoration.id);
+				if (removedInfo) {
+					showRemovedLinesOverlay(lineNumber, removedInfo.lineCount, removedInfo.text);
+					return;
+				}
+			}
 		});
 
 		// ensure clicking/tapping the editor container focuses the editor so the caret appears
@@ -200,6 +377,17 @@
 		}
 	}
 
+	async function initializeEditor() {
+		disposeEditor();
+
+		const initialContents = getReadonlyText();
+
+		codeStore.set(initialContents);
+		specHistory.push(initialContents);
+
+		await createEditor();
+	}
+
 	onMount(async () => {
 		if (!editorContainer) return;
 		monaco = await import('monaco-editor');
@@ -207,8 +395,20 @@
 		data = getDataToken();
 
 		await initializeEditor();
+		document.addEventListener('pointerdown', handleRemovedOverlayOutsidePointerDown);
 
 		editorMounted = true;
+
+		// initialize the worker
+		self.MonacoEnvironment = {
+			getWorker(_workerId: string, label: string) {
+				if (label === 'json') {
+					return new JsonWorker();
+				}
+
+				return new EditorWorker();
+			}
+		};
 	});
 
 	/**
@@ -270,6 +470,13 @@
 
 				if (restrictions.length) constrainedInstance.addRestrictionsTo(model, restrictions);
 				updateReadonlyDecorations();
+				// highlight what the server changed compared to the spec that was sent
+				try {
+					const prevSpec = specHistory[specHistory.length - 1] ?? '';
+					applyServerDiffDecorations(prevSpec, finalString);
+				} catch (err) {
+					console.error('Failed to compute server diff decorations', err);
+				}
 			}
 
 			if (textareaFallback) textareaFallback.value = finalString;
@@ -281,6 +488,23 @@
 		}
 	}
 
+	function disposeEditor() {
+		closeRemovedLinesOverlay();
+		if (editorView) {
+			editorView.dispose();
+			editorView = null;
+		}
+		if (editorModel) {
+			editorModel.dispose();
+			editorModel = null;
+		}
+		readonlyDecorationIds = [];
+		serverChangeDecorationIds = [];
+		removedDecorationById.clear();
+		if (constrainedInstance) {
+			constrainedInstance = null;
+		}
+	}
 
 	export async function rollbackChanges() {
 		const specBeforeAppliedChanges = specHistory[specHistory.length - 1];
@@ -303,6 +527,9 @@
 	}
 
 	onDestroy(() => {
+		if (typeof document !== 'undefined') {
+			document.removeEventListener('pointerdown', handleRemovedOverlayOutsidePointerDown);
+		}
 	    try {
 	        if (editorView && typeof editorView.dispose === 'function') editorView.dispose();
 	    } catch (err) {}
@@ -311,7 +538,9 @@
 	    } catch (err) {}
 	    try {
 			// ensure any document listener used by the dataset help popover is removed
-			document.removeEventListener('mousedown', handleDocClick);
+			if (typeof document !== 'undefined') {
+				document.removeEventListener('mousedown', handleDocClick);
+			}
 		} catch (err) {}
 	});
 
@@ -643,6 +872,52 @@
   		border-radius: 4px;
   		padding: 0 6px;
   	}
+  /* server-returned change highlights */
+  :global(.server-added) {
+  	background: rgba(76,175,80,0.14);
+  	border-left: 3px solid rgba(76,175,80,0.9);
+  }
+  :global(.server-removed-glyph) {
+	  position: relative;
+	  cursor: pointer;
+  }
+  :global(.server-removed-glyph::before) {
+	  content: '';
+	  position: absolute;
+	  left: 2px;
+	  right: 2px;
+	  top: -1px;
+	  height: 5px;
+	  border-radius: 1px;
+	  background: gray;
+  }
+  :global(.removed-lines-overlay) {
+	  position: absolute;
+	  margin-left: .25rem;
+	  margin-top: 0.25rem;
+	  max-width: min(40vw, 540px);
+	  max-height: 48vh;
+	  overflow: auto;
+	  background: lightgray;
+	  border: 1px solid gray;
+	  border-radius: 4px;
+	  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+	  padding: 0.6rem 0.6rem;
+	  color: #efefef;
+	  font-size: 0.84rem;
+	  z-index: 80;
+  }
+  :global(.removed-lines-overlay-title) {
+	  color: dimgray;
+	  font-weight: 400;
+	  font-size: .7rem;
+	  margin-bottom: 0.4rem;
+  }
+  :global(.removed-lines-overlay-content) {
+	  margin: 0;
+	  white-space: pre-wrap;
+	  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
 
   /* Copy button styles: positioned top-right inside .content and visible on hover/focus */
   .content {

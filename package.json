@@ -28,6 +28,7 @@
 		"bulma": "^1.0.4",
 		"constrained-editor-plugin": "^1.4.0",
 		"d3-dsv": "^3.0.1",
+		"diff": "^9.0.0",
 		"fabric": "^7.3.1",
 		"monaco-editor": "^0.56.0",
 		"openai": "^6.33.0",
