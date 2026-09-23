@@ -33,7 +33,7 @@
 	let removedLinesOverlay:
 		| { anchorLine: number; lineCount: number; text: string }
 		| null = null;
-	let removedOverlayWidget: Monaco.editor.IOverlayWidget | null = null;
+	let removedOverlayWidget: Monaco.editor.IContentWidget | null = null;
 	let removedOverlayDomNode: HTMLDivElement | null = null;
 
 	function applyServerDiffDecorations(prevText: string, newText: string) {
@@ -143,7 +143,7 @@
 
 	function closeRemovedLinesOverlay() {
 		if (editorView && removedOverlayWidget) {
-			editorView.removeOverlayWidget(removedOverlayWidget);
+			editorView.removeContentWidget(removedOverlayWidget);
 		}
 		removedOverlayWidget = null;
 		removedOverlayDomNode = null;
@@ -167,15 +167,21 @@
 		removedOverlayDomNode = domNode;
 
 		const widgetId = `removed-lines-overlay-${Date.now()}`;
-		const widget: Monaco.editor.IOverlayWidget = {
+		const widget: Monaco.editor.IContentWidget = {
 			getId: () => widgetId,
 			getDomNode: () => domNode,
 			getPosition: () => ({
-				preference: monacoApi.editor.OverlayWidgetPositionPreference.TOP_RIGHT_CORNER
-			})
+				position: {
+					lineNumber: anchorLine,
+					column: 1
+				},
+				preference: [monacoApi.editor.ContentWidgetPositionPreference.EXACT]
+			}),
+			allowEditorOverflow: true,
+			suppressMouseDown: true
 		};
 		removedOverlayWidget = widget;
-		editorView.addOverlayWidget(widget);
+		editorView.addContentWidget(widget);
 	}
 
 	function handleRemovedOverlayOutsidePointerDown(e: PointerEvent) {
@@ -342,7 +348,7 @@
 			lineDecorationsWidth: 4,
 			folding: false
 		});
-		monaco.editor.setTheme('vs-dark');
+		monaco.editor.setTheme('vs-light');
 
 		editorModel = editorView.getModel();
 		if (!editorModel) {
@@ -900,24 +906,28 @@
 	  top: -1px;
 	  height: 5px;
 	  border-radius: 1px;
-	  background: rgba(244,67,54,0.95);
+	  background: gray;
   }
   :global(.removed-lines-overlay) {
+	  position: absolute;
+	  margin-left: .25rem;
+	  margin-top: 0.25rem;
 	  max-width: min(40vw, 540px);
 	  max-height: 48vh;
 	  overflow: auto;
-	  background: #161616;
-	  border: 1px solid rgba(244,67,54,0.5);
-	  border-radius: 8px;
+	  background: lightgray;
+	  border: 1px solid gray;
+	  border-radius: 4px;
 	  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-	  padding: 0.6rem 0.75rem;
+	  padding: 0.6rem 0.6rem;
 	  color: #efefef;
 	  font-size: 0.84rem;
 	  z-index: 80;
   }
   :global(.removed-lines-overlay-title) {
-	  color: rgba(244,67,54,0.95);
-	  font-weight: 600;
+	  color: dimgray;
+	  font-weight: 400;
+	  font-size: .7rem;
 	  margin-bottom: 0.4rem;
   }
   :global(.removed-lines-overlay-content) {
