@@ -115,7 +115,7 @@ async function sendClaudePrompt(opts: { inputText?: string; imageUrl?: any }): P
     thinking: {
       type: "adaptive"
     },
-    tools: [{ type: "web_search_20260209", name: "web_search" }]
+    // tools: [{ type: "web_search_20260209", name: "web_search" }]
   }
 
   const res: any = await claude.messages.create(payload)

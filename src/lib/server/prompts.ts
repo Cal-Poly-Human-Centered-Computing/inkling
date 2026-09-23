@@ -38,7 +38,6 @@ Output only the updated Vega-Lite specification.`,
     Your job is to determine: Does the above spec accurately represent the annotated visualization? 
     In other words, ignoring specific styling details like color and size, are all components that are present in the sketch also present in the spec, and vice versa? 
     Also consider any issues that will prevent the components in the Vega-Lite spec from displaying properly.
-    Use the web search tool as needed to determine issues.
     If there are issues, modify the spec as needed. 
     
     OUTPUT RULES:
@@ -47,7 +46,6 @@ Output only the updated Vega-Lite specification.`,
 
     compareSpecToInstructions: `Does the above Vega-Lite spec correctly implement the given instructions?
     Also consider any issues that will prevent the components in the Vega-Lite spec from displaying properly.
-    Use the web search tool as needed to determine issues.
     If not, modify it as needed. 
     
     OUTPUT RULES:
