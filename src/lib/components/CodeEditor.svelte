@@ -178,6 +178,16 @@
 		editorView.addOverlayWidget(widget);
 	}
 
+	function handleRemovedOverlayOutsidePointerDown(e: PointerEvent) {
+		const target = e.target;
+		if (!(target instanceof Node)) return;
+
+		if (removedOverlayDomNode?.contains(target)) return;
+		if (target instanceof Element && target.closest('.server-removed-glyph')) return;
+
+		closeRemovedLinesOverlay();
+	}
+
 	// copy button state
 	let copied = false;
 
@@ -392,6 +402,7 @@
 		data = getDataToken();
 
 		await initializeEditor();
+		document.addEventListener('pointerdown', handleRemovedOverlayOutsidePointerDown);
 
 		editorMounted = true;
 
@@ -523,7 +534,8 @@
 	}
 
 	onDestroy(() => {
-	    try {
+		document?.removeEventListener('pointerdown', handleRemovedOverlayOutsidePointerDown);
+		try {
 	        if (editorView && typeof editorView.dispose === 'function') editorView.dispose();
 	    } catch (err) {}
 	    try {
@@ -531,7 +543,7 @@
 	    } catch (err) {}
 	    try {
 			// ensure any document listener used by the dataset help popover is removed
-			document.removeEventListener('mousedown', handleDocClick);
+			document?.removeEventListener('mousedown', handleDocClick);
 		} catch (err) {}
 	});
 
