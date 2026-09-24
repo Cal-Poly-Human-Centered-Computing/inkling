@@ -27,6 +27,8 @@
 	const _penCursorSvg = encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="black" stroke="none"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>');
 	const PEN_CURSOR = `url("data:image/svg+xml;utf8,${_penCursorSvg}") 3 20, auto`;
 
+	const CANVAS_PADDING = 14;
+
 	let editingText: boolean = false;
 	let objectSelected: boolean = false;
 
@@ -278,8 +280,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 		const container = boxEl || document.body;
 		const rect = container.getBoundingClientRect();
-		const width = rect.width - 40; // account for horizontal padding (20px on each side)
-		const height = rect.height - 40;
+		const width = rect.width-CANVAS_PADDING;
+		const height = rect.height-CANVAS_PADDING;
 		const ratio = window.devicePixelRatio || 1;
 		try {
 			fabricCanvas.setDimensions({ width, height });
@@ -549,52 +551,16 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 </script>
 
-<style>
-    /* Ensure common modal/dialog selectors sit above the canvas and overlays in all themes
-   Force a very high z-index so third-party modals (Bootstrap, Bulma, native dialog, etc.)
-   will render above the canvas. This avoids detecting modal state and is a minimal change. */
-    :global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
-        z-index: 100000 !important;
-    }
+<div class="box" bind:this={boxEl}>
 
-    /* overlay spinner styles */
-    .applying-overlay {
-    	position: absolute;
-    	left: 0;
-    	top: 0;
-    	right: 0;
-    	bottom: 0;
-    	display: flex;
-    	align-items: center;
-    	justify-content: center;
-    	background: rgba(255, 255, 255, 0.8);
-    	pointer-events: all;
-    	z-index: 1000;
-		margin: 20px;
-    }
-
-    .applying-status {
-    	display: flex;
-    	flex-direction: column;
-    	align-items: center;
-    	color: #333;
-    	font-size: 16px;
-    	font-weight: 500;
-    	text-align: center;
-    }
-</style>
-
-<div class="box" style="height:100%; position:relative; display:flex; flex-direction:column;" bind:this={boxEl}>
-
-	<div bind:this={toolbarEl} style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 20px 20px 0 20px; z-index:10000;">
+	<div bind:this={toolbarEl} style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 10px 10px 0 10px; z-index:10000;">
 		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete={objectSelected}
 					   on:selectTool={handleSelectTool} on:delete={deleteSelectedObject}
 					   on:undo={undo} disableUndo={disableUndo} on:redo={redo} disableRedo={disableRedo} />
 	</div>
 
 	<!-- Fabric.js canvas (annotation surface). Vega embed will be added later underneath this layer. -->
-	<canvas bind:this={fabricCanvasEl}
-		style="position:absolute; left:0; top:0; right:0; bottom:0; width:100%; height:100%; touch-action:none; z-index:30;">
+	<canvas bind:this={fabricCanvasEl} class:is-active={historyIndex >= 1}>
 	</canvas>
 
 	<!-- Applying overlay with spinner and status text -->
@@ -608,3 +574,71 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	{/if}
 
 </div>
+
+<style>
+	/* Ensure common modal/dialog selectors sit above the canvas and overlays in all themes
+   Force a very high z-index so third-party modals (Bootstrap, Bulma, native dialog, etc.)
+   will render above the canvas. This avoids detecting modal state and is a minimal change. */
+	:global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
+		z-index: 100000 !important;
+	}
+
+	canvas {
+		position:absolute;
+		left:0;
+		top:0;
+		right:0;
+		bottom:0;
+		width:100%;
+		height:100%;
+		touch-action:none;
+		z-index:30;
+		border-radius: 8px;
+		border: 1px solid lightgray;
+		transition: box-shadow 200ms ease, border-color 200ms ease;
+	}
+
+	/* overlay spinner styles */
+	.applying-overlay {
+		position: absolute;
+		left: 0;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(255, 255, 255, 0.8);
+		pointer-events: all;
+		z-index: 1000;
+		margin: 20px;
+	}
+
+	.applying-status {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		color: #333;
+		font-size: 16px;
+		font-weight: 500;
+		text-align: center;
+	}
+
+	.box {
+		height:100%;
+		position:relative;
+		display:flex;
+		flex-direction:column;
+		justify-content: center;
+		align-items: center;
+		padding: 0;
+	}
+
+	canvas.is-active {
+		border-color: var(--color-apply-changes-dark);
+		box-shadow:
+				0 0 0 1px var(--color-apply-changes-dark),
+				0 2px 4px 1px color-mix(in srgb, var(--color-apply-changes-dark) 45%, transparent),
+				0 6px 12px 3px color-mix(in srgb, var(--color-apply-changes-light) 45%, transparent);
+	}
+</style>

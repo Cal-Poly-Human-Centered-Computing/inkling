@@ -775,25 +775,6 @@
 <style>
   /* Default (light) theme styles */
   @media (prefers-color-scheme: light) {
-	  :global(.code-fallback) { caret-color: black !important; }
-
-	  /* scrollbars - dark thumbs on light track */
-    :global(.cm-scroller::-webkit-scrollbar), :global(.code-fallback::-webkit-scrollbar) {
-      height: 10px; width: 10px;
-    }
-    :global(.cm-scroller::-webkit-scrollbar-track), :global(.code-fallback::-webkit-scrollbar-track) {
-      background: rgba(0,0,0,0.04);
-      border-radius: 6px;
-    }
-    :global(.cm-scroller::-webkit-scrollbar-thumb), :global(.code-fallback::-webkit-scrollbar-thumb) {
-      background: rgba(0,0,0,0.28);
-      border-radius: 6px;
-    }
-    :global(.cm-scroller), :global(.code-fallback) {
-      scrollbar-width: thin;
-      scrollbar-color: rgba(0,0,0,0.28) rgba(0,0,0,0.04);
-    }
-
 	/* dataset help styles (light) */
 	.dataset-source-control .help-icon-button {
 		border-radius: 50%;
@@ -822,24 +803,6 @@
 
   /* Dark theme styles */
   @media (prefers-color-scheme: dark) {
-	  :global(.cm-content), :global(.code-fallback) { caret-color: white !important; }
-
-    /* scrollbars - light thumbs on subtle dark track */
-    :global(.cm-scroller::-webkit-scrollbar), :global(.code-fallback::-webkit-scrollbar) {
-      height: 10px; width: 10px;
-    }
-    :global(.cm-scroller::-webkit-scrollbar-track), :global(.code-fallback::-webkit-scrollbar-track) {
-      background: rgba(255,255,255,0.03);
-      border-radius: 6px;
-    }
-    :global(.cm-scroller::-webkit-scrollbar-thumb), :global(.code-fallback::-webkit-scrollbar-thumb) {
-      background: rgba(255,255,255,0.54);
-      border-radius: 6px;
-    }
-    :global(.cm-scroller), :global(.code-fallback) {
-      scrollbar-width: thin;
-      scrollbar-color: rgba(255,255,255,0.54) rgba(255,255,255,0.03);
-    }
 
 	/* dataset help styles (dark) */
 	.dataset-source-control .help-icon-button {
@@ -867,6 +830,11 @@
 		color: #eaeaea;
 	}
   }
+
+  .box {
+	  padding: 12px;
+  }
+
   :global(.readonly-text-inline) {
   		background: rgba(128,128,128,0.22);
   		border-radius: 4px;

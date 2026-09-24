@@ -14,8 +14,9 @@
   let renderedVisPresent = false; // track whether we've rendered a spec yet to determine if "apply changes" should do sketch-to-spec or spec update
 
   let historyStacks: Array<Array<string>> = [];
-  let historyIndex: -1;
+  let historyIndex = -1;
 
+  let message = ''
   let chatSending: boolean = false;
 
   function handleUpload(e: CustomEvent) {
@@ -237,7 +238,7 @@
 
       <!-- Chatbox pinned to bottom -->
       <div style="flex:0 0 auto; margin-top:0.5rem;">
-        <ChatBox sending={chatSending} on:send={handleSendChat} />
+        <ChatBox bind:message={message} sending={chatSending} on:send={handleSendChat} />
       </div>
     </div>
 
@@ -245,7 +246,7 @@
       <!-- VersionControlToolbar -->
       <div style="flex:0 0 auto;">
         <VersionControlToolbar on:applyChanges={handleApplyChanges} on:rollbackChanges={handleRollbackChanges}
-                               canApply={historyIndex >= 1} canRollback={historyStacks.length >= 1} applying={applying} />
+                               canApply={message.trim().length > 0 || historyIndex >= 1} canRollback={historyStacks.length >= 1} applying={applying} />
       </div>
 
       <!-- Canvas / visualization area -->
