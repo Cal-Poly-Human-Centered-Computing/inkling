@@ -11,13 +11,19 @@
   let applying = false;
   let showRollbackConfirmationModal = false;
 
-  let renderedVisPresent = false; // track whether we've rendered a spec yet to determine if "apply changes" should do sketch-to-spec or spec update
-
   let historyStacks: Array<Array<string>> = [];
   let historyIndex = -1;
 
   let message = ''
   let chatSending: boolean = false;
+
+  function textInputIsActive() {
+    return message.trim().length > 0;
+  }
+
+  function canvasIsActive() {
+    return historyIndex >= 1;
+  }
 
   function handleUpload(e: CustomEvent) {
     uploadedFile = e.detail;
@@ -175,6 +181,26 @@
       }
 
       const resultText: string = jsonResp.result ?? '';
+
+//       const resultText = `{
+//   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+//   "data": {
+//     "url": "https://vega.github.io/vega-datasets/data/cars.json"
+//   },
+//   "mark": "point",
+//   "encoding": {
+//     "x": {
+//       "field": "Horsepower",
+//       "type": "quantitative",
+//       "title": "Horsepower"
+//     },
+//     "y": {
+//       "field": "Miles_per_Gallon",
+//       "type": "quantitative",
+//       "title": "Miles per Gallon"
+//     }
+//   }
+// }`
       await handleIncomingCodeUpdate(resultText);
 
     } catch (err) {
@@ -246,7 +272,7 @@
       <!-- VersionControlToolbar -->
       <div style="flex:0 0 auto;">
         <VersionControlToolbar on:applyChanges={handleApplyChanges} on:rollbackChanges={handleRollbackChanges}
-                               canApply={message.trim().length > 0 || historyIndex >= 1} canRollback={historyStacks.length >= 1} applying={applying} />
+                               canApply={textInputIsActive() || canvasIsActive()} canRollback={historyStacks.length >= 1} applying={applying} />
       </div>
 
       <!-- Canvas / visualization area -->
