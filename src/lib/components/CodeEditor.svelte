@@ -8,8 +8,7 @@
 	import {get} from "svelte/store";
 	import type * as Monaco from 'monaco-editor';
 	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
-	import {getColumnNames, getDataToken, getFirstRow, setDataset} from "$lib/utils/datasetStore";
-	import { conversationId as convIdStore } from '$lib/stores/conversationId';
+	import {getDataToken, setDataset} from "$lib/utils/datasetStore";
 	import constrainedEditor from 'constrained-editor-plugin';
 	import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
 	import JsonWorker from 'monaco-editor/language/json/json.worker?worker';
@@ -17,7 +16,6 @@
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
-	let textareaFallback: HTMLTextAreaElement | null = null;
 	let editorMounted = false;
 	let monaco: typeof Monaco | null = null;
 	let editorView: Monaco.editor.IStandaloneCodeEditor | null = null;
@@ -186,7 +184,7 @@
 
 	/**
 	 * Copy the full spec (stored in `codeStore`) to the clipboard.
-	 * Uses navigator.clipboard when available, with a textarea fallback.
+	 * Uses navigator.clipboard when available.
 	 */
 	async function copyToClipboard() {
 	    const text = String(get(codeStore) || '');
@@ -197,30 +195,7 @@
 	            throw new Error('Clipboard API not available');
 	        }
 	    } catch (err) {
-	        // Fallback: use an existing fallback textarea if present, otherwise create a temporary one
-	        let ta = textareaFallback as HTMLTextAreaElement | null;
-	        let created = false;
-	        if (!ta) {
-	            created = true;
-	            ta = document.createElement('textarea');
-	            ta.value = text;
-	            // keep off-screen and invisible but selectable
-	            ta.style.position = 'fixed';
-	            ta.style.left = '-9999px';
-	            ta.style.top = '0';
-	            ta.style.opacity = '0';
-	            document.body.appendChild(ta);
-	        } else {
-	            ta.value = text;
-	        }
-	        try {
-	            ta.focus();
-	            ta.select();
-	            document.execCommand('copy');
-	        } catch (e) {
-	            // swallow
-	        }
-	        if (created && ta && ta.parentNode) ta.parentNode.removeChild(ta);
+	        console.log('An error occurred while copying to clipboard.')
 	    }
 
 	    copied = true;
@@ -479,7 +454,6 @@
 				}
 			}
 
-			if (textareaFallback) textareaFallback.value = finalString;
 			await tick();
 			dispatch('codeApplied');
 		} else {
@@ -515,15 +489,6 @@
 			codeStore.set(specBeforeAppliedChanges);
 		}
 		specHistory.splice(specHistory.length - 1, 1)
-	}
-
-
-	// on fallback textarea input, write to store directly
-	let fallbackValue = get(codeStore) || '';
-	function onFallbackInput(e: Event) {
-		const t = e.target as HTMLTextAreaElement;
-		fallbackValue = t.value;
-		codeStore.set(t.value);
 	}
 
 	onDestroy(() => {
@@ -667,10 +632,6 @@
 	</div>
 
 	<div bind:this={editorContainer} class="content" style="flex:1 1 auto; min-height:0; border:1px solid #eaeaea; position:relative;">
-		{#if !editorMounted}
-			<textarea bind:this={textareaFallback} class="textarea code-fallback" bind:value={fallbackValue} on:input={onFallbackInput} aria-label="Vega-Lite editor fallback" style="height:100%; width:100%; overflow:auto; white-space:pre; resize:none;"></textarea>
-		{/if}
-
 		<!-- Copy button placed in the editor overlay (top-right). Visible on hover or when editor has focus. -->
 		<button class="copy-button" type="button" aria-label={copied ? 'Copied' : 'Copy code'} title={copied ? 'Copied' : 'Copy'} on:click={copyToClipboard}>
 			<span class="icon is-small">
