@@ -24,13 +24,13 @@
 <!-- Container uses flex with center alignment so all buttons line up vertically -->
 <div class="toolbar" style="display:flex; align-items:center; justify-content:end; padding:0.5rem;">
 	<div>
-		<button class="button is-warning toolbar-button" aria-label="Rollback" on:click={rollbackChanges} disabled="{!canRollback}">
+		<button class="button rollback-button toolbar-button" aria-label="Rollback" on:click={rollbackChanges} disabled="{!canRollback}">
 			<span class="icon toolbar-icon">
 				<Fa icon={faRotateLeft} />
 			</span>
 			<span>Rollback</span>
 		</button>
-		<button class="button is-info toolbar-button" aria-label="Apply changes" on:click={applyChanges} disabled="{!canApply || applying}">
+		<button class="button apply-changes-button toolbar-button" aria-label="Apply changes" on:click={applyChanges} disabled="{!canApply || applying}">
 			<span class="icon toolbar-icon">
 				{#if applying}
 					<Fa icon={faSpinner} spin />
@@ -66,5 +66,14 @@
 	/* Slight transition for visual feedback */
 	:global(.toolbar-button) {
 		transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+	}
+
+	.apply-changes-button {
+		background-color: var(--color-apply-changes-dark);
+		color: white;
+	}
+
+	.rollback-button {
+		background-color: var(--color-rollback-changes);
 	}
 </style>

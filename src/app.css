@@ -1,0 +1,7 @@
+:root {
+    --color-apply-changes-dark: seagreen;
+    --color-apply-changes-light: darkseagreen;
+
+    --color-rollback-changes: gold;
+
+}
