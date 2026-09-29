@@ -13,6 +13,7 @@
 	import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
 	import JsonWorker from 'monaco-editor/language/json/json.worker?worker';
 	import { diffLines } from 'diff';
+	import { isDark } from '$lib/stores/theme';
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -302,6 +303,9 @@
 			scrollBeyondLastLine: false,
 			wordWrap: 'off',
 			tabSize: 2,
+			fontSize: 16,
+			fontFamily: "Mono",
+			fontWeight: "700",
 			insertSpaces: true,
 			formatOnPaste: true,
 			formatOnType: true,
@@ -310,7 +314,8 @@
 			lineDecorationsWidth: 4,
 			folding: false
 		});
-		monaco.editor.setTheme('vs-light');
+		// set explicitly at creation so there's no flash of the wrong theme; later changes are handled reactively below
+		monaco.editor.setTheme(get(isDark) ? 'vs-dark' : 'vs');
 
 		editorModel = editorView.getModel();
 		if (!editorModel) {
@@ -613,6 +618,9 @@
 		}
 	}
 
+	// follow the system color scheme (setTheme is global to Monaco, so one call covers the editor)
+	$: if (monaco) monaco.editor.setTheme($isDark ? 'vs-dark' : 'vs');
+
 	// hide the help popover whenever the user switches away from file mode
 	$: if (datasetMode !== 'file') {
 		showDatasetHelp = false;
@@ -631,7 +639,7 @@
 		</button>
 	</div>
 
-	<div bind:this={editorContainer} class="content" style="flex:1 1 auto; min-height:0; border:1px solid #eaeaea; position:relative;">
+	<div bind:this={editorContainer} class="content" style="flex:1 1 auto; min-height:0; border:1px solid var(--bulma-border); position:relative;">
 		<!-- Copy button placed in the editor overlay (top-right). Visible on hover or when editor has focus. -->
 		<button class="copy-button" type="button" aria-label={copied ? 'Copied' : 'Copy code'} title={copied ? 'Copied' : 'Copy'} on:click={copyToClipboard}>
 			<span class="icon is-small">
@@ -827,17 +835,17 @@
 	  max-width: min(40vw, 540px);
 	  max-height: 48vh;
 	  overflow: auto;
-	  background: lightgray;
-	  border: 1px solid gray;
+	  background: var(--color-float-bg);
+	  border: 1px solid var(--color-float-border);
 	  border-radius: 4px;
 	  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
 	  padding: 0.6rem 0.6rem;
-	  color: #efefef;
+	  color: var(--color-float-text);
 	  font-size: 0.84rem;
 	  z-index: 80;
   }
   :global(.removed-lines-overlay-title) {
-	  color: dimgray;
+	  color: var(--color-warm-gray);
 	  font-weight: 400;
 	  font-size: .7rem;
 	  margin-bottom: 0.4rem;
@@ -862,8 +870,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255,255,255,0.9);
-    border: 1px solid rgba(0,0,0,0.08);
+    background: var(--color-float-bg);
+    color: var(--color-float-text);
+    border: 1px solid var(--color-float-border);
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     cursor: pointer;
     transition: opacity 160ms ease, transform 160ms ease;
