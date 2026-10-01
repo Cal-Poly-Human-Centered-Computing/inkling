@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { json } from '@sveltejs/kit';
-import {sendChat} from '$lib/server/server';
+import {sendChat} from '$lib/server/app';
 
 export const POST: RequestHandler = async ({ request }) => {
   try {
@@ -9,7 +9,11 @@ export const POST: RequestHandler = async ({ request }) => {
     let currentSpec = body.currentSpec ?? '';
     let chatMessage = body.chatMessage;
     let columnNames = body.columnNames ?? null;
-    const result = await sendChat({ currentSpec, chatMessage, columnNames });
+    let columns = body.columns ?? null;
+
+    const payload = { currentSpec, chatMessage, columnNames, columns };
+
+    const result = await sendChat(payload);
     return json({ ok: true, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

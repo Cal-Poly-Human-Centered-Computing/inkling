@@ -1,6 +1,6 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { json } from '@sveltejs/kit';
-import { applyAnnotations } from '$lib/server/server';
+import { applyAnnotations } from '$lib/server/app';
 
 /**
  * Endpoint to apply the annotations the user has made to a rendered visualization, and return the updated Vega-Lite spec
@@ -13,13 +13,17 @@ export const POST: RequestHandler = async ({ request }) => {
     let imageUrl: string | null = null;
     let currentSpec: string = '';
     let columnNames: string[] | null = null;
+    let columns = null;
     if (body && typeof body === 'object') {
       imageUrl = (body as any).image ?? (body as any).imageUrl ?? null;
       currentSpec = body.currentSpec ?? '';
       columnNames = body.columnNames ?? null;
+      columns = body.columns ?? null;
     }
 
-    const result = await applyAnnotations({ image: imageUrl, currentSpec, columnNames });
+    const payload = { image: imageUrl, currentSpec, columnNames, columns };
+
+    const result = await applyAnnotations(payload);
     return json({ ok: true, result });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

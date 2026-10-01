@@ -3,7 +3,7 @@
   import { code as codeStore } from '$lib/stores/code';
   import {get} from "svelte/store";
   import { conversationId as convIdStore } from '$lib/stores/conversationId';
-  import {getColumnNames} from "$lib/utils/datasetStore";
+  import {getColumnNames, getColumnSchema} from "$lib/utils/datasetStore";
 
   let uploadedFile: File | null = null;
   let canvasViewRef: any = null;
@@ -36,7 +36,7 @@
     chatSending = true;
     applying = true;
 
-    const bodyPayload: any = { currentSpec: get(codeStore), chatMessage: e.detail, columnNames: getColumnNames() };
+    const bodyPayload: any = { currentSpec: get(codeStore), chatMessage: e.detail, columnNames: getColumnNames(), columns: getColumnSchema() };
 
     try {
       const resp = await fetch('/api/send-chat', {
@@ -152,14 +152,14 @@
       let resp;
 
       if (canvasViewRef.renderedVisPresent()) {
-        const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), columnNames: getColumnNames() };
+        const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), columnNames: getColumnNames(), columns: getColumnSchema() };
         resp = await fetch('/api/apply-annotations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(bodyPayload)
         });
       } else {
-        const bodyPayload: any = { image: dataUrl, columnNames: getColumnNames() };
+        const bodyPayload: any = { image: dataUrl, columnNames: getColumnNames(), columns: getColumnSchema() };
         console.log(bodyPayload)
         resp = await fetch('/api/sketch-to-spec', {
           method: 'POST',
