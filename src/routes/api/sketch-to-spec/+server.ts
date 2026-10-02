@@ -19,10 +19,10 @@ export const POST: RequestHandler = async ({ request }) => {
       columns = body.columns ?? null;
     }
 
-    const payload = { image: imageUrl, columnNames, columns };
+    const payload = { image: imageUrl, columnNames, columns, currentSpec: body.currentSpec ?? null, chatMessage: body.chatMessage ?? null };
 
-    const result = await sketchToSpec(payload);
-    return json({ ok: true, result });
+    const {spec, errors} = await sketchToSpec(payload as any);
+    return json({ ok: true, result: spec, errors });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return json({ ok: false, error: message }, { status: 500 });

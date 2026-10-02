@@ -6,15 +6,15 @@ import {z} from "zod";
 // The spec is returned as a JSON string: Vega-Lite's schema is too large and recursive for structured outputs.
 // `observations` records what the model saw in plain language (not Vega-Lite terms), for evals and debugging.
 export const SpecOutput = z.object({
-  observations: z.string().describe("Brief plain-language description of what is drawn on the canvas, or what the annotations ask for"),
+  observations: z.string().describe("Numbered answers to the questions in the instructions, in brief plain language"),
   spec: z.string().describe("The Vega-Lite spec as a JSON string, without a data property")
 });
 export type SpecOutput = z.infer<typeof SpecOutput>;
 
+// The reviewer only reports; any revision happens in the generation conversation
 export const ReviewVerdict = z.object({
   matches: z.boolean(),
-  issues: z.array(z.string()),
-  revisedSpec: z.string().nullable().describe("Corrected spec as a JSON string if there were issues, otherwise null")
+  issues: z.array(z.string())
 });
 export type ReviewVerdict = z.infer<typeof ReviewVerdict>;
 

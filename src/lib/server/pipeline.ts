@@ -1,18 +1,44 @@
 import prompts from './prompts';
 import type {LLM} from './prompting';
+import {renderSpec} from './render';
+import {ReviewVerdict, SpecOutput, type ColumnSchema} from './schemas';
 
 export type Pipelines = ReturnType<typeof createPipelines>;
 
-export type PipelineOptions = {
-  // Receives each model call's prompt and output; the eval harness uses this to record intermediate steps
-  trace?: (step: { prompt: string; output: unknown }) => void;
+export type SketchToSpecInput = {
+  image: string | null;
+  columns: ColumnSchema;
+  columnNames: string[]; // still sent by the client; the new prompts use `columns`
+  currentSpec?: string | null;
+  chatMessage?: string | null;
 };
+
+// `errors` is non-empty when no valid spec could be produced; `spec` is then the last invalid attempt
+export type SpecResult = {
+  spec: string;
+  observations: string;
+  errors: string[];
+};
+
+function formatColumns(columns: ColumnSchema) {
+  return columns.map(c => `${c.name}: ${c.type}`).join("\n");
+}
+
+// The text inputs in the agreed order (code, chat, columns), each only if present.
+// Any image is sent ahead of this text (see buildContent in prompting.ts).
+function formatInputs(inputs: { currentSpec?: string | null; chatMessage?: string | null; columns: ColumnSchema }) {
+  const blocks: string[] = [];
+  if (inputs.currentSpec?.trim()) blocks.push(`<current_spec>\n${inputs.currentSpec}\n</current_spec>`);
+  if (inputs.chatMessage?.trim()) blocks.push(`<chat_instruction>\n${inputs.chatMessage}\n</chat_instruction>`);
+  blocks.push(`<columns>\n${formatColumns(inputs.columns)}\n</columns>`);
+  return blocks.join("\n\n");
+}
 
 /**
  * Builds the sketch/annotation/chat pipelines on top of a given LLM client.
- * Kept free of SvelteKit imports so the eval harness can use it directly.
+ * Kept free of SvelteKit imports; app.ts binds it to the configured client.
  */
-export function createPipelines(llm: LLM, options: PipelineOptions = {}) {
+export function createPipelines(llm: LLM) {
 
   async function sendPrompt(opts: { inputText: string; imageUrl?: string | null }): Promise<string> {
     const {inputText, imageUrl} = opts;
@@ -21,41 +47,49 @@ export function createPipelines(llm: LLM, options: PipelineOptions = {}) {
       text: inputText,
       images: imageUrl ? [{label: "Image 1: the canvas", dataUrl: imageUrl}] : []
     });
-    options.trace?.({prompt: inputText, output});
     return output;
   }
 
-  async function analyzeSketchFromScratch(imageUrl: string, columnNames: string[]) {
-    let inputText = `${prompts.analyzeSketchFromScratch}\n\nCOLUMN NAMES: ${columnNames.join(", ")}`;
+  // --- Generation ---
 
-    const initialSpec = await sendPrompt({inputText, imageUrl});
+  /**
+   * Turn 1 of the generation conversation. The long flowchart prompt is only used when there's a sketch.
+   * Returns the conversation too, so retry turns can continue it.
+   */
+  async function generate(payload: SketchToSpecInput) {
+    const convo = llm.conversation(prompts.fromScratch.system);
+    const instructions = payload.image ? prompts.fromScratch.withSketch : prompts.fromScratch.withoutSketch;
+    const text = `${formatInputs(payload)}\n\n${instructions.trim()}`;
+    const images = payload.image ? [{label: "The sketch", dataUrl: payload.image}] : [];
+    const output = await convo.ask({text, images}, SpecOutput);
+    return {convo, ...output};
+  }
 
-    return initialSpec;
+  // --- Verification (shared by the new pipelines) ---
+
+  /**
+   * Compiles and runs the spec against placeholder data.
+   * Errors cover invalid JSON, compile and runtime errors, and fields that aren't columns.
+   */
+  async function checkSpec(spec: string, columns: ColumnSchema) {
+    const {errors, png} = await renderSpec(spec, columns);
+    return {errors, png};
   }
 
   /**
-   * Iteratively review the generated spec to make sure it matches the intention of the sketch
-   * @param spec
-   * @param imageUrl
+   * Asks a separate reviewer whether the render matches the sketch's structure (not its values).
    */
-  async function compareSpecToSketch(spec: string, imageUrl: string) {
-    let i = 0;
-    let currentSpec = spec;
-
-    while (i < 3) { // limit to 3 iterations to avoid infinite loops
-      let inputText = `${currentSpec}\n\n${prompts.compareSpecToSketch}`
-      let res = await sendPrompt({inputText, imageUrl });
-
-      // even with strict instructions in the prompt, sometimes the AI includes explanations before saying "no changes"
-      if (res.toLowerCase().includes('no changes')) {
-        break;
-      }
-
-      currentSpec = res;
-      i++;
-    }
-
-    return currentSpec;
+  async function review(opts: { image: string; spec: string; renderPng: string; columns: ColumnSchema }): Promise<ReviewVerdict> {
+    const text = `<columns>\n${formatColumns(opts.columns)}\n</columns>\n\n<spec>\n${opts.spec}\n</spec>\n\n${prompts.verify.review}`;
+    const verdict = await llm.structured({
+      system: prompts.verify.reviewSystem,
+      text,
+      images: [
+        {label: "Image 1: the user's sketch", dataUrl: opts.image},
+        {label: "Image 2: the candidate spec rendered with placeholder data", dataUrl: opts.renderPng}
+      ]
+    }, ReviewVerdict);
+    return verdict;
   }
 
   /**
@@ -133,19 +167,26 @@ export function createPipelines(llm: LLM, options: PipelineOptions = {}) {
   /**
    * Given a sketch, generates corresponding specs from scratch (without an underlying vis already rendered)
    */
-  async function sketchToSpec(payload: any): Promise<string> {
+  async function sketchToSpec(payload: SketchToSpecInput): Promise<SpecResult> {
 
-    const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
+    // 1: Generate
 
-    // 1: Send the sketch to be translated into a spec
+    const {spec, observations} = await generate(payload);
 
-    const initialSpec = await analyzeSketchFromScratch(imageUrl, payload.columnNames);
+    // 2: Compile and run against placeholder data. Retrying with the errors comes with the new generation step.
 
-    // 2: Review the generated spec
+    const check = await checkSpec(spec, payload.columns);
+    if (check.errors.length || !check.png) {
+      return {spec, observations, errors: check.errors.length ? check.errors : ['Spec could not be rendered']};
+    }
 
-    const reviewedSpec = await compareSpecToSketch(initialSpec, imageUrl);
+    // 3: Visual review, only when there's a sketch to compare against. The verdict isn't acted on yet; retries come later.
 
-    return reviewedSpec;
+    if (payload.image) {
+      await review({image: payload.image, spec, renderPng: check.png, columns: payload.columns});
+    }
+
+    return {spec, observations, errors: []};
   }
 
   /**

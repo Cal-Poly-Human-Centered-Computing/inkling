@@ -1,20 +1,49 @@
 const prompts = {
-    systemPrompt: "You are an expert in data visualization and Vega-Lite.",
-    analyzeSketchFromScratch: `The attached image is a hand-drawn sketch of a data visualization. Translate it into a Vega-Lite specification using the guidelines below.
-Do not fill in the "data" value in the spec; this will be handled later.
-Since it is hand-drawn, do not be strict when interpreting stroke detail (curvature, thickness, etc).
-Do not include optional or excessive styling specifications; allow default values unless the sketch explicitly indicates otherwise.
-    - Are there multiple charts concatenated together? If so, are they concatenated vertically or horizontally?
-    - For each chart, determine:
-        - What MARKS are present (point, bar, line, area, etc.)? There may be multiple mark types.
-        - What VISUAL ENCODINGS are used? A visual encoding is a mapping from a mark's visual property to a field in the data (like the mark's x,y position, etc.). Do not specify any color encodings.
-        - What LAYERS are present? A LAYER is a chart that superimposed on top of another chart.
-        - What TRANSFORMS have been performed? Transforms might be aggregations (like count, std, mean, sum), calculation of new fields, or other transformations, like computing a regression or a window transform.
-Make sure not to confuse axis lines with marks/transforms.
-For field names, use the closest match in the column names provided below.        
-        
-Output only the Vega-Lite specification in JSON format, without any explanations.`,
+    // --- New pipelines (see the plan in from-scratch-pipeline.md); not used yet ---
 
+    // Generating a spec from a sketch on a blank canvas
+    fromScratch: {
+        // Role, Vega-Lite guidance, chat > sketch > spec precedence, never include `data`
+    system: `Your job is to generate a Vega-Lite specification based on a user's inputs. The inputs will include any or all of the following: a chat instruction, a sketch image, and the user's current Vega-Lite spec. In addition, you will be given the schema of the user's data set (column names and data types). Instructions in any of the inputs may complement or reference instructions in other inputs, so consider them all together. If there are contradictions within the inputs, resolve conflicting elements with the following precedence: chat > sketch > current spec. Never include the \`data\` field in the output spec. Placeholder data will be generated in a later verification step, and the client's real data is in their browser; in both cases, a later step will inject the \`data\` field. Fields in the output specification must match the provided column names, or must come from transformations that are applied within the spec. Target Vega-Lite version 6. The output spec should always include the schema string "https://vega.github.io/schema/vega-lite/v6.json".`,
+        // First turn: the flowchart questions about the sketch, then the spec. Inputs (image, code, chat, columns) are added around it.
+    withSketch: `
+The image is a rough, hand-drawn sketch of a data visualization, drawn on a blank canvas. Before writing the spec, work through the questions below about the sketch and record your answers in \`observations\`, in plain language rather than Vega-Lite terms. Skip any question that does not apply. Then write the spec in \`spec\`, based on your answers and on any other inputs.
+      
+Because the sketch is hand-drawn, read it for intent rather than precision: wobbly lines, uneven spacing, and stroke thickness or colour are not meaningful unless they clearly distinguish one element from another. Do not mistake axis lines, tick marks, or gridlines for data marks. Text in the sketch (axis titles, legend entries, chart titles) will often approximate a column name rather than match it exactly; map it to the closest column in \`<columns>\`.
+
+If a <chat_instruction> or <current_spec> is present, use it while answering the questions as well as when writing the spec: the chat may clarify what part of the sketch means, and the current spec may already contain elements the sketch builds on.
+
+1. How many charts are drawn? Count the separate charts in the sketch. Each chart has its own plotting area, usually with its own axes. Several sets of marks drawn on the same axes form one chart with layers, not several charts; layers are covered in the next question. Legends, titles and notes are not separate charts. If there is more than one chart, describe how they are arranged (side by side, stacked vertically, or in a grid) and refer to them in reading order, as Chart 1, Chart 2 and so on, for the rest of your answers. If there is only one chart, skip the composition question at the end.
+
+2. What layers does each chart have? A layer is one set of marks within a chart’s plotting area. Signs of more than one layer include different mark types on the same axes (for example bars with a line over them), a reference line or text annotation drawn over the data, or groups of marks that show different quantities. Be careful with colour: marks in several colours that correspond to categories of one field (often shown in a legend) are usually a single layer with a colour encoding, not several layers.
+3. For each layer, describe:
+Mark: the kind of mark (bar, line, point, area, rule, text, and so on). If no standard mark fits, describe the shape; it may need to be built by combining simpler marks in layers.
+Fields: which columns the layer uses, based on axis titles, legend entries and chart titles, mapped to <columns>.
+Encodings: which visual properties vary with the data (x or y position, colour, size, shape, opacity, and so on), which field each one represents, and that field’s type. Properties that are the same for every mark are styling, not encodings.
+Transforms: whether the data has been transformed. Compare the sketch’s text with the column names: for example, a title like “Average price” suggests a mean of a price column, “Number of orders” suggests a count, an axis grouped into ranges suggests binning, “by month” suggests a time unit, and a trend line over points suggests a regression. Only include a transform when the sketch indicates one.
+4. If there is more than one chart, how are they combined? Work through these in order:
+If every chart has the same marks and encodings and each shows a different subset of the data, the charts are a facet. Typically the panels share axis titles and each is labelled with a category value. Facet on the field those labels come from, using rows, columns or a wrapped grid to match the arrangement.
+If every chart has the same marks and encodings but each shows the whole dataset with different fields, the charts are a repeat. Typically the panels have the same structure but different axis titles. Repeat over those fields.
+Otherwise, concatenate the charts in the arrangement described in question 1: \`hconcat\` for side by side, \`vconcat\` for stacked, and \`concat\` with \`columns\` for a grid.
+5. Output. In \`observations\`, give your answers to the questions above, numbered to match, in brief plain language. Leave out questions you skipped. Where the sketch is ambiguous, choose the most likely reading and say in a few words what you assumed. In \`spec\`, write the complete Vega-Lite spec that implements the instructions specified by your answers, any chat instruction, and the current spec.
+    `,
+        // Turn 1 when there is no sketch (chat and/or code only): a short prompt, no flowchart questions
+        withoutSketch: "TODO"
+    },
+
+    // Checking a candidate spec. Compile and runtime checks are code; only the visual review and the retry turns need prompts.
+    verify: {
+        // The separate review call: sketch vs placeholder-data render, structure only
+        reviewSystem: "TODO",
+        review: "TODO",
+        // Retry turns in the generation conversation (shared by fromScratch and refine)
+        fixErrors: "TODO",        // the latest compile/runtime errors follow it
+        reviseFromReview: "TODO"  // the reviewer's issues follow it
+    },
+
+    // --- Old prompts, still used by the current pipelines. Delete each when its replacement lands. ---
+
+    systemPrompt: "You are an expert in data visualization and Vega-Lite.",
     matchColumnNames: `Given the above COLUMN_NAMES, update the above Vega-Lite specification to use the closest matching column names as the field names.
 ONLY modify the field names in the Vega-Lite specification, do not modify any other part of the spec. If there are multiple columns that could match a field name, choose the one that is most likely to be correct based on the context of the visualization.
 Output only the updated Vega-Lite specification.`,
@@ -22,16 +51,6 @@ Output only the updated Vega-Lite specification.`,
     reviewSpec: `Does this Vega-Lite spec accomplish what it's intended to do? If not, modify it. 
     Also consider any issues that will prevent the visualization components from displaying properly. 
     Only make changes that are necessary to correct these issues. `,
-
-    compareSpecToSketch: `The attached image is a hand-drawn sketch of a data visualization.
-    Does the above Vega-Lite spec accurately represent the attached sketch, assuming the "data" element will be handled later and all specified fields are valid? 
-    In other words, ignoring specific styling details like color and size, are all components that are present in the sketch also present in the spec, and vice versa? 
-    Also consider any issues that will prevent the components in the Vega-Lite spec from displaying properly.
-    If there are issues, modify the spec as needed. 
-    
-    OUTPUT RULES:
-    If you modified the spec, output ONLY the spec (no explanations).
-    If you did not modify the spec, output 'NO CHANGES' and nothing else.`,
 
     compareSpecToAnnotations: `The attached image is a rendering of a Vega-Lite specification, with annotations (pen strokes and/or typed text) an author has made to indicate their desired changes.
     The above Vega-Lite spec is the resulting specification, updated with the changes indicated by the annotations.

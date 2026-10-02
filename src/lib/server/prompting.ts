@@ -9,12 +9,20 @@ export type ImageInput = {
   dataUrl: string; // data:<mime>;base64,<data>
 };
 
-export type PromptRequest = {
-  system: string;
+// One user turn
+export type Turn = {
   text: string;
   // Usually zero or one image; the visual review sends two (sketch + render of the candidate spec)
   images?: ImageInput[];
   effort?: Effort;
+};
+
+export type PromptRequest = Turn & { system: string };
+
+// A multi-turn exchange, e.g. so a retry can see the model's earlier spec and reasoning.
+// Each turn can use a different schema.
+export type Conversation = {
+  ask<T>(turn: Turn, schema: z.ZodType<T>): Promise<T>;
 };
 
 export type LLMConfig = {
@@ -28,6 +36,7 @@ export type LLMConfig = {
 export type LLM = {
   text(req: PromptRequest): Promise<string>;
   structured<T>(req: PromptRequest, schema: z.ZodType<T>): Promise<T>;
+  conversation(system: string): Conversation;
 };
 
 const MEDIA_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
@@ -45,7 +54,7 @@ function toImageBlock(dataUrl: string): Anthropic.ImageBlockParam {
   return {type: "image", source: {type: "base64", media_type: mediaType, data: match[2]}};
 }
 
-function buildContent(req: PromptRequest): Anthropic.ContentBlockParam[] {
+function buildContent(req: Turn): Anthropic.ContentBlockParam[] {
   const content: Anthropic.ContentBlockParam[] = [];
   const images = req.images ?? [];
 
@@ -76,12 +85,12 @@ export function createLLM(config: LLMConfig): LLM {
     defaultHeaders: config.workspaceId ? {"anthropic-workspace-id": config.workspaceId} : undefined
   });
 
-  function baseParams(req: PromptRequest) {
+  function baseParams(system: string, messages: Anthropic.MessageParam[]) {
     return {
       model: config.model,
       max_tokens: 16000, // thinking tokens count against this, so leave plenty of room
-      system: req.system,
-      messages: [{role: "user" as const, content: buildContent(req)}],
+      system,
+      messages,
       thinking: {type: "adaptive" as const}
     };
   }
@@ -90,10 +99,25 @@ export function createLLM(config: LLMConfig): LLM {
     config.onResponse?.({model: res.model, usage: res.usage, stopReason: res.stop_reason});
   }
 
+  // Returns the full response too, so conversations can keep it in their history
+  async function parse<T>(system: string, messages: Anthropic.MessageParam[], effort: Effort | undefined, schema: z.ZodType<T>) {
+    const res = await client.messages.parse({
+      ...baseParams(system, messages),
+      output_config: {effort: effort ?? "high", format: zodOutputFormat(schema)}
+    });
+    report(res);
+    checkStopReason(res);
+
+    if (res.parsed_output == null) {
+      throw new Error("Claude response did not match the expected schema");
+    }
+    return {res, parsed: res.parsed_output as T};
+  }
+
   return {
     async text(req) {
       const res = await client.messages.create({
-        ...baseParams(req),
+        ...baseParams(req.system, [{role: "user", content: buildContent(req)}]),
         output_config: {effort: req.effort ?? "high"}
       });
       report(res);
@@ -105,17 +129,24 @@ export function createLLM(config: LLMConfig): LLM {
     },
 
     async structured(req, schema) {
-      const res = await client.messages.parse({
-        ...baseParams(req),
-        output_config: {effort: req.effort ?? "high", format: zodOutputFormat(schema)}
-      });
-      report(res);
-      checkStopReason(res);
+      const {parsed} = await parse(req.system, [{role: "user", content: buildContent(req)}], req.effort, schema);
+      return parsed;
+    },
 
-      if (res.parsed_output == null) {
-        throw new Error("Claude response did not match the expected schema");
-      }
-      return res.parsed_output as any;
+    conversation(system) {
+      const messages: Anthropic.MessageParam[] = [];
+
+      return {
+        async ask(turn, schema) {
+          const userMessage: Anthropic.MessageParam = {role: "user", content: buildContent(turn)};
+          const {res, parsed} = await parse(system, [...messages, userMessage], turn.effort, schema);
+
+          // Only record the exchange once it succeeded. The reply is kept exactly as returned,
+          // thinking blocks included: editing earlier turns invalidates the model's later reasoning.
+          messages.push(userMessage, {role: "assistant", content: res.content});
+          return parsed;
+        }
+      };
     }
   };
 }
