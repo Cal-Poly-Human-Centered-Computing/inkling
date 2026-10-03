@@ -20,6 +20,7 @@ export type SpecResult = {
   spec: string;
   observations: string;
   errors: string[];
+  review: ReviewVerdict | null; // null when there was no sketch or the spec never compiled; only recorded for now
 };
 
 function formatColumns(columns: ColumnSchema) {
@@ -74,8 +75,8 @@ export function createPipelines(llm: LLM) {
    * Errors cover invalid JSON, compile and runtime errors, and fields that aren't columns.
    */
   async function checkSpec(spec: string, columns: ColumnSchema) {
-    const {errors, png} = await renderSpec(spec, columns);
-    return {errors, png};
+    const {errors} = await renderSpec(spec, columns);
+    return {errors};
   }
 
   /**
@@ -96,17 +97,15 @@ export function createPipelines(llm: LLM) {
   }
 
   /**
-   * Asks a separate reviewer whether the render matches the sketch's structure (not its values).
+   * Asks a separate reviewer whether the spec matches the sketch's structure.
+   * The reviewer also sees any chat instruction, since chat takes precedence over the sketch.
    */
-  async function review(opts: { image: string; spec: string; renderPng: string; columns: ColumnSchema }): Promise<ReviewVerdict> {
-    const text = `<columns>\n${formatColumns(opts.columns)}\n</columns>\n\n<spec>\n${opts.spec}\n</spec>\n\n${prompts.verify.review}`;
+  async function review(opts: { image: string; spec: string; chatMessage?: string | null; columns: ColumnSchema }): Promise<ReviewVerdict> {
+    const text = `${formatInputs({chatMessage: opts.chatMessage, columns: opts.columns})}\n\n<spec>\n${opts.spec}\n</spec>\n\n${prompts.verify.review}`;
     const verdict = await llm.structured({
       system: prompts.verify.reviewSystem,
       text,
-      images: [
-        {label: "Image 1: the user's sketch", dataUrl: opts.image},
-        {label: "Image 2: the candidate spec rendered with placeholder data", dataUrl: opts.renderPng}
-      ]
+      images: [{label: "The user's sketch", dataUrl: opts.image}]
     }, ReviewVerdict);
     return verdict;
   }
@@ -196,17 +195,17 @@ export function createPipelines(llm: LLM) {
 
     const check = await compileLoop(convo, firstSpec, payload.columns);
     const spec = check.spec;
-    if (check.errors.length || !check.png) {
-      return {spec, observations, errors: check.errors.length ? check.errors : ['Spec could not be rendered']};
+    if (check.errors.length) {
+      return {spec, observations, errors: check.errors, review: null};
     }
 
-    // 3: Visual review, only when there's a sketch to compare against. The verdict isn't acted on yet; retries come later.
+    // 3: Review the spec against the sketch, only when there is one. The verdict isn't acted on yet; retries come later.
 
-    if (payload.image) {
-      await review({image: payload.image, spec, renderPng: check.png, columns: payload.columns});
-    }
+    const verdict = payload.image
+      ? await review({image: payload.image, spec, chatMessage: payload.chatMessage, columns: payload.columns})
+      : null;
 
-    return {spec, observations, errors: []};
+    return {spec, observations, errors: [], review: verdict};
   }
 
   /**

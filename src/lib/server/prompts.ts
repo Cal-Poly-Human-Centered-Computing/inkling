@@ -24,7 +24,7 @@ Transforms: whether the data has been transformed. Compare the sketch’s text w
 If every chart has the same marks and encodings and each shows a different subset of the data, the charts are a facet. Typically the panels share axis titles and each is labelled with a category value. Facet on the field those labels come from, using rows, columns or a wrapped grid to match the arrangement.
 If every chart has the same marks and encodings but each shows the whole dataset with different fields, the charts are a repeat. Typically the panels have the same structure but different axis titles. Repeat over those fields.
 Otherwise, concatenate the charts in the arrangement described in question 1: \`hconcat\` for side by side, \`vconcat\` for stacked, and \`concat\` with \`columns\` for a grid.
-5. Output. In \`observations\`, give your answers to the questions above, numbered to match, in brief plain language. Leave out questions you skipped. Where the sketch is ambiguous, choose the most likely reading and say in a few words what you assumed. In \`spec\`, write the complete Vega-Lite spec that implements the instructions specified by your answers, any chat instruction, and the current spec.
+5. Output. In \`observations\`, give your answers to the questions above in very brief plain language. Leave out questions you skipped. Where the sketch is ambiguous, choose the most likely reading and say in a few words what you assumed. In \`spec\`, write the complete Vega-Lite spec that implements the instructions specified by your answers, any chat instruction, and the current spec.
     `,
         // Turn 1 when there is no sketch (chat and/or code only): a short prompt, no flowchart questions
     withoutSketch: `
@@ -34,9 +34,12 @@ The provided inputs, containing a <chat_instruction>, <current_spec>, or both, d
 
     // Checking a candidate spec. Compile and runtime checks are code; only the visual review and the retry turns need prompts.
     verify: {
-        // The separate review call: sketch vs placeholder-data render, structure only
-        reviewSystem: "TODO",
-        review: "TODO",
+        // The separate review call: sketch vs spec, structure only; any chat instruction may override the sketch
+      reviewSystem: `
+Your job is to check if a candidate Vega-Lite specification matches a user's instructions. The user's instructions are provided through an image, optionally accompanied by a chat instruction. You are checking for structural similarity, i.e., does the specification contain ONLY the marks, visual encodings, transformations, layers, facets, repeats, or concatenations that are present in the provided image or described in the provided chat instruction? The chat instruction may refer to elements from the image. The image may contain rough hand-drawn sketch marks, possibly drawn alongside a rendered visualization. For this reason sketch marks should be interpreted for intent rather than precision. Column labels in the sketch or chat will only approximate existing column names, so may not match exactly the field names seen in the specification. You will only report a verdict and list any issues if present. If the chat instruction and image contradict each other, favour the chat instruction. Note that the \`data\` property will not be present in the specification; the data injected in a later step.
+`,
+      review: `
+Check in both directions: everything the sketch or <chat_instruction> calls for should be in <spec>, and <spec> should not add structure that neither of them calls for. Do not flag styling such as colours, sizes or exact positions unless they show a data field, and do not flag defaults that Vega-Lite fills in, such as axis titles. Set matches to true if there are no structural differences. Otherwise set it to false and list each difference as one item in issues, saying what the sketch or chat calls for and what the specification does instead, specifically enough that someone could fix the specification from that item alone.`,
         // Retry turns in the generation conversation (shared by fromScratch and refine)
       fixErrors: `
 The previous specification caused errors (e.g., invalid JSON, invalid Vega-Lite, references to non-existent columns). The errors are provided in <errors>. Consider the errors and revise the specification, making the smallest changes required to address the errors, while still preserving the user's intent (gleaned from the user's inputs). Return the revised specification in \`spec\`.

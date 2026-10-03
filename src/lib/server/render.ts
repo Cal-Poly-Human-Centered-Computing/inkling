@@ -1,10 +1,9 @@
 import * as vegaLite from "vega-lite";
 import * as vega from "vega";
-import {Resvg} from "@resvg/resvg-js";
 import type {ColumnSchema} from "./schemas";
 
-// Renders candidate specs on the server with placeholder data generated from the column schema.
-// Real data never reaches the server, so renders show a spec's structure, not the user's actual values.
+// Compiles and runs candidate specs on the server with placeholder data generated from the column schema.
+// Real data never reaches the server, so this checks a spec's structure, not the user's actual values.
 
 const NUM_ROWS = 60;
 const NUM_CATEGORIES = 5;
@@ -45,7 +44,6 @@ export type RenderResult = {
   ok: boolean;
   errors: string[];
   warnings: string[];
-  png: string | null; // data URL
 };
 
 function collectingLogger(warnings: string[], errors: string[]) {
@@ -57,7 +55,7 @@ function collectingLogger(warnings: string[], errors: string[]) {
 }
 
 /**
- * Compiles and runs a spec against placeholder data, returning compile/runtime errors and a PNG render.
+ * Compiles and runs a spec against placeholder data, returning compile/runtime errors.
  * Catches problems that compiling alone misses, e.g. fields that don't exist.
  */
 export async function renderSpec(specString: string, columns: ColumnSchema): Promise<RenderResult> {
@@ -70,7 +68,7 @@ export async function renderSpec(specString: string, columns: ColumnSchema): Pro
   } catch (err) {
     return {
       ok: false,
-      errors: [`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`], warnings, png: null
+      errors: [`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`], warnings
     };
   }
 
@@ -84,25 +82,16 @@ export async function renderSpec(specString: string, columns: ColumnSchema): Pro
     const log = collectingLogger(warnings, errors);
     const compiled = vegaLite.compile(spec, {logger: log});
     const view = new vega.View(vega.parse(compiled.spec), {renderer: "none", logger: log});
-    const svg = await view.toSVG();
+    // Rendering to SVG (and discarding it) surfaces runtime errors that compiling alone misses
+    await view.toSVG();
     view.finalize();
-
-    const png = new Resvg(svg, {
-      background: "white",
-      font: {loadSystemFonts: true, defaultFontFamily: "Arial"}
-    }).render().asPng();
 
     errors.push(...unknownFieldErrors(spec, known));
 
-    return {
-      ok: errors.length === 0,
-      errors,
-      warnings,
-      png: `data:image/png;base64,${Buffer.from(png).toString("base64")}`
-    };
+    return {ok: errors.length === 0, errors, warnings};
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));
-    return {ok: false, errors, warnings, png: null};
+    return {ok: false, errors, warnings};
   }
 }
 
