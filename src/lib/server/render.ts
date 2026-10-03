@@ -56,7 +56,8 @@ function collectingLogger(warnings: string[], errors: string[]) {
 
 /**
  * Compiles and runs a spec against placeholder data, returning compile/runtime errors.
- * Catches problems that compiling alone misses, e.g. fields that don't exist.
+ * Running the view catches some problems that compiling alone misses. Fields that don't exist are not caught:
+ * Vega only warns about them, and checking them ourselves would mean hardcoding Vega-Lite's transform semantics.
  */
 export async function renderSpec(specString: string, columns: ColumnSchema): Promise<RenderResult> {
   const warnings: string[] = [];
@@ -75,9 +76,6 @@ export async function renderSpec(specString: string, columns: ColumnSchema): Pro
   // The spec deliberately omits data; inject placeholder rows for rendering only
   spec = {...spec, data: {values: placeholderData(columns)}};
 
-  // Vega only warns about fields that don't exist, so they're checked explicitly after rendering
-  const known = new Set(columns.map(c => c.name));
-
   try {
     const log = collectingLogger(warnings, errors);
     const compiled = vegaLite.compile(spec, {logger: log});
@@ -86,41 +84,9 @@ export async function renderSpec(specString: string, columns: ColumnSchema): Pro
     await view.toSVG();
     view.finalize();
 
-    errors.push(...unknownFieldErrors(spec, known));
-
     return {ok: errors.length === 0, errors, warnings};
   } catch (err) {
     errors.push(err instanceof Error ? err.message : String(err));
     return {ok: false, errors, warnings};
   }
-}
-
-// Collects "field" references in the spec that are neither columns nor fields created by a transform
-function unknownFieldErrors(spec: any, columns: Set<string>): string[] {
-  const derived = new Set<string>();
-  const referenced = new Set<string>();
-
-  const walk = (node: any) => {
-    if (Array.isArray(node)) {
-      node.forEach(walk);
-      return;
-    }
-    if (!node || typeof node !== "object") return;
-
-    for (const [key, value] of Object.entries(node)) {
-      if (key === "data") continue;
-      if (key === "as") {
-        [value].flat().forEach(v => typeof v === "string" && derived.add(v));
-      } else if (key === "field" && typeof value === "string") {
-        referenced.add(value);
-      } else {
-        walk(value);
-      }
-    }
-  };
-  walk(spec);
-
-  return [...referenced]
-    .filter(f => !columns.has(f) && !derived.has(f))
-    .map(f => `Field "${f}" is not a column in the dataset or a field created by a transform`);
 }

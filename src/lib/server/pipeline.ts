@@ -7,7 +7,7 @@ export type Pipelines = ReturnType<typeof createPipelines>;
 
 const MAX_COMPILE_RETRIES = 2;
 
-export type SketchToSpecInput = {
+export type PipelineInput = {
   image: string | null;
   columns: ColumnSchema;
   columnNames: string[]; // still sent by the client; the new prompts use `columns`
@@ -38,32 +38,21 @@ function formatInputs(inputs: { currentSpec?: string | null; chatMessage?: strin
 }
 
 /**
- * Builds the sketch/annotation/chat pipelines on top of a given LLM client.
+ * Builds the fromScratch and refine pipelines on top of a given LLM client.
  * Kept free of SvelteKit imports; app.ts binds it to the configured client.
  */
 export function createPipelines(llm: LLM) {
 
-  async function sendPrompt(opts: { inputText: string; imageUrl?: string | null }): Promise<string> {
-    const {inputText, imageUrl} = opts;
-    const output = await llm.text({
-      system: prompts.systemPrompt,
-      text: inputText,
-      images: imageUrl ? [{label: "Image 1: the canvas", dataUrl: imageUrl}] : []
-    });
-    return output;
-  }
-
   // --- Generation ---
 
   /**
-   * Turn 1 of the generation conversation. The long flowchart prompt is only used when there's a sketch.
+   * Turn 1 of the generation conversation, with the given task instructions after the inputs.
    * Returns the conversation too, so retry turns can continue it.
    */
-  async function generate(payload: SketchToSpecInput) {
-    const convo = llm.conversation(prompts.fromScratch.system);
-    const instructions = payload.image ? prompts.fromScratch.withSketch : prompts.fromScratch.withoutSketch;
+  async function generate(payload: PipelineInput, instructions: string) {
+    const convo = llm.conversation(prompts.system);
     const text = `${formatInputs(payload)}\n\n${instructions.trim()}`;
-    const images = payload.image ? [{label: "The sketch", dataUrl: payload.image}] : [];
+    const images = payload.image ? [{label: "The canvas", dataUrl: payload.image}] : [];
     const output = await convo.ask({text, images}, SpecOutput);
     return {convo, ...output};
   }
@@ -72,7 +61,7 @@ export function createPipelines(llm: LLM) {
 
   /**
    * Compiles and runs the spec against placeholder data.
-   * Errors cover invalid JSON, compile and runtime errors, and fields that aren't columns.
+   * Errors cover invalid JSON, compile and runtime errors (not fields that aren't columns).
    */
   async function checkSpec(spec: string, columns: ColumnSchema) {
     const {errors} = await renderSpec(spec, columns);
@@ -111,85 +100,13 @@ export function createPipelines(llm: LLM) {
   }
 
   /**
-   * Iteratively review the updated spec to make sure it matches the intention of the annotations
-   * @param spec
-   * @param imageUrl
+   * The shared new pipeline: generate with the given instructions, compile with retries, then review if there's an image.
    */
-  async function compareSpecToAnnotations(spec: string, imageUrl: string) {
-    let i = 0;
-    let currentSpec = spec;
-
-    while (i < 3) { // limit to 3 iterations to avoid infinite loops
-      let inputText = `${currentSpec}\n\n${prompts.compareSpecToAnnotations}`
-      let res = await sendPrompt({inputText, imageUrl})
-
-      // even with strict instructions in the prompt, sometimes the AI includes explanations before saying "no changes"
-      if (res.toLowerCase().includes('no changes')) {
-        break;
-      }
-
-      currentSpec = res;
-      i++;
-    }
-
-    return currentSpec;
-  }
-
-  /**
-   * Iteratively review the updated spec to make sure it matches the intention of the chat message
-   * @param spec
-   * @param imageUrl
-   */
-  async function compareSpecToInstructions(oldSpec: string, updatedSpec: string, chatMessage: string) {
-    let i = 0;
-    let currentSpec = updatedSpec;
-
-    while (i < 3) { // limit to 3 iterations to avoid infinite loops
-      let inputText = `SPEC_BEFORE:\n${oldSpec}
-
-    INSTRUCTIONS:\n${chatMessage}
-
-    SPEC_AFTER:\n${currentSpec}
-
-    ${prompts.compareSpecToInstructions}`
-      let res = await sendPrompt({inputText})
-
-      // even with strict instructions in the prompt, sometimes the AI includes explanations before saying "no changes"
-      if (res.toLowerCase().includes('no changes')) {
-        break;
-      }
-
-      currentSpec = res;
-      i++;
-    }
-
-    return currentSpec;
-  }
-
-  async function analyzeAnnotatedSketch(currentSpec: string, imageUrl: string, columnNames: string[]) {
-    let inputText = `${currentSpec}\n\n${prompts.analyzeAnnotatedSketch}\n\nCOLUMN NAMES: ${columnNames.join(", ")}`;
-
-    const instructions = await sendPrompt({inputText, imageUrl});
-
-    return instructions;
-  }
-
-  async function applyChatMessage(currentSpec: string, instructions: string) {
-    let inputText = `${currentSpec}\n\nINSTRUCTIONS:\n${instructions}\n\n${prompts.applyChatMessage}`;
-
-    const updatedSpec = await sendPrompt({inputText});
-
-    return updatedSpec;
-  }
-
-  /**
-   * Given a sketch, generates corresponding specs from scratch (without an underlying vis already rendered)
-   */
-  async function sketchToSpec(payload: SketchToSpecInput): Promise<SpecResult> {
+  async function runPipeline(payload: PipelineInput, instructions: string): Promise<SpecResult> {
 
     // 1: Generate
 
-    const {convo, spec: firstSpec, observations} = await generate(payload);
+    const {convo, spec: firstSpec, observations} = await generate(payload, instructions);
 
     // 2: Compile and run against placeholder data, retrying with the errors
 
@@ -199,7 +116,7 @@ export function createPipelines(llm: LLM) {
       return {spec, observations, errors: check.errors, review: null};
     }
 
-    // 3: Review the spec against the sketch, only when there is one. The verdict isn't acted on yet; retries come later.
+    // 3: Review the spec against the image (sketch or annotations), only when there is one. The verdict isn't acted on yet.
 
     const verdict = payload.image
       ? await review({image: payload.image, spec, chatMessage: payload.chatMessage, columns: payload.columns})
@@ -209,45 +126,18 @@ export function createPipelines(llm: LLM) {
   }
 
   /**
-   * Given a Vega-Lite spec and annotated visualization, returns corresponding code
+   * A new spec on a blank canvas (or over an invalid spec), from a sketch and/or chat
    */
-  async function applyAnnotations(payload: any): Promise<string> {
-
-    const currentSpec = payload.currentSpec ?? '';
-
-    const imageUrl = payload && typeof payload === 'object' ? (payload.image ?? payload.imageUrl ?? null) : null;
-
-    // 1: Send the annotations to be translated into an updated spec
-
-    const updatedSpec = await analyzeAnnotatedSketch(currentSpec, imageUrl, payload.columnNames);
-
-    // 2: Review the updated spec
-
-    const reviewedSpec = await compareSpecToAnnotations(updatedSpec, imageUrl);
-
-    return reviewedSpec;
-
+  async function fromScratch(payload: PipelineInput): Promise<SpecResult> {
+    return runPipeline(payload, payload.image ? prompts.fromScratch.withSketch : prompts.fromScratch.withoutSketch);
   }
 
   /**
-   * Given a Vega-Lite spec and a user message, returns a corresponding spec applying the user's message
+   * Changes to a rendered chart, from annotations drawn on or beside it (the image is the chart with strokes) and/or chat
    */
-  async function sendChat(payload: any): Promise<string> {
-
-    const currentSpec = payload.currentSpec;
-    const chatMessage = payload.chatMessage;
-
-    // 1: Apply the desired changes to the spec
-
-    const updatedSpec = await applyChatMessage(currentSpec, chatMessage);
-
-    // 2: Review the updated spec
-
-    const reviewedSpec = await compareSpecToInstructions(currentSpec, updatedSpec, chatMessage);
-
-    return reviewedSpec;
-
+  async function refine(payload: PipelineInput): Promise<SpecResult> {
+    return runPipeline(payload, payload.image ? prompts.refine.withSketch : prompts.refine.withoutSketch);
   }
 
-  return {sketchToSpec, applyAnnotations, sendChat};
+  return {fromScratch, refine};
 }

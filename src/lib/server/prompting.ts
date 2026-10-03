@@ -34,7 +34,6 @@ export type LLMConfig = {
 };
 
 export type LLM = {
-  text(req: PromptRequest): Promise<string>;
   structured<T>(req: PromptRequest, schema: z.ZodType<T>): Promise<T>;
   conversation(system: string): Conversation;
 };
@@ -115,19 +114,6 @@ export function createLLM(config: LLMConfig): LLM {
   }
 
   return {
-    async text(req) {
-      const res = await client.messages.create({
-        ...baseParams(req.system, [{role: "user", content: buildContent(req)}]),
-        output_config: {effort: req.effort ?? "high"}
-      });
-      report(res);
-      checkStopReason(res);
-
-      // Thinking blocks come before the answer, so take the last text block
-      const textBlocks = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text");
-      return textBlocks.at(-1)?.text ?? "";
-    },
-
     async structured(req, schema) {
       const {parsed} = await parse(req.system, [{role: "user", content: buildContent(req)}], req.effort, schema);
       return parsed;

@@ -47,10 +47,9 @@ function recording<K extends RequestKind>(kind: K): Pipelines[K] {
   }) as Pipelines[K];
 }
 
-export const {sketchToSpec, applyAnnotations, sendChat} = recordLabel
+export const {fromScratch, refine} = recordLabel
   ? {
-    sketchToSpec: recording('sketchToSpec'),
-    applyAnnotations: recording('applyAnnotations'),
-    sendChat: recording('sendChat')
+    fromScratch: recording('fromScratch'),
+    refine: recording('refine')
   }
   : pipelines;
