@@ -68,7 +68,10 @@ export async function renderSpec(specString: string, columns: ColumnSchema): Pro
   try {
     spec = JSON.parse(specString);
   } catch (err) {
-    return {ok: false, errors: [`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`], warnings, png: null};
+    return {
+      ok: false,
+      errors: [`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`], warnings, png: null
+    };
   }
 
   // The spec deliberately omits data; inject placeholder rows for rendering only

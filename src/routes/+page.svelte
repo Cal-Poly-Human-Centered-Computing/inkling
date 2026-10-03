@@ -3,6 +3,7 @@
   import { code as codeStore } from '$lib/stores/code';
   import {get} from "svelte/store";
   import { conversationId as convIdStore } from '$lib/stores/conversationId';
+  import { observations as observationsStore } from '$lib/stores/observations';
   import {getColumnNames, getColumnSchema} from "$lib/utils/datasetStore";
 
   let uploadedFile: File | null = null;
@@ -126,6 +127,7 @@
       }
 
       const resultText: string = jsonResp.result ?? '';
+      observationsStore.set(jsonResp.observations ?? null);
 
       // A spec that still has errors is shown anyway, so it can be fixed in the editor
       if (jsonResp.errors?.length) {

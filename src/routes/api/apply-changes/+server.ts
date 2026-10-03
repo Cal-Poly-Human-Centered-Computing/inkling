@@ -19,25 +19,34 @@ export const POST: RequestHandler = async ({ request }) => {
     const columnNames: string[] = body.columnNames ?? [];
     const renderedVis = Boolean(body.renderedVis);
 
-    // Blank canvas with a sketch: the new pipeline, which takes every input
-    if (!renderedVis && image) {
-      const {spec, errors} = await sketchToSpec({image, chatMessage, currentSpec, columns, columnNames});
-      return json({ ok: true, result: spec, errors });
+    // The new pipeline, which takes every active input
+    // No renderedVis means this is a first-turn input
+    if (!renderedVis) {
+      if (image || chatMessage) {
+        // There is a sketch or chat message.
+        const { spec, observations, errors } = await sketchToSpec({image, chatMessage, currentSpec, columns, columnNames});
+        return json({ ok: true, result: spec, observations, errors });
+      } else {
+        // Don't do anything.
+        // Shouldn't reach here through the web client, since
+        // the Apply Changes button is disabled in this case.
+        return json({ ok: false, error: 'Nothing to apply: no sketch, annotations, or chat message' }, { status: 400 });
+      }
     }
 
     // Annotations on a rendered chart: the old pipeline, which can't take chat yet
-    if (renderedVis && image) {
+    if (image) {
       if (chatMessage) {
         console.warn('[apply-changes] chat message ignored: the annotations pipeline does not take chat yet');
       }
       const result = await applyAnnotations({image, currentSpec, columnNames, columns});
-      return json({ ok: true, result, errors: [] });
+      return json({ ok: true, result, observations: null, errors: [] });
     }
 
-    // Chat (and code) only: the old chat pipeline, until fromScratch.withoutSketch / refine exist
+    // Chat (and code) only: the old chat pipeline, until refine exists
     if (chatMessage) {
       const result = await sendChat({currentSpec, chatMessage, columnNames, columns});
-      return json({ ok: true, result, errors: [] });
+      return json({ ok: true, result, observations: null, errors: [] });
     }
 
     return json({ ok: false, error: 'Nothing to apply: no sketch, annotations or chat message' }, { status: 400 });

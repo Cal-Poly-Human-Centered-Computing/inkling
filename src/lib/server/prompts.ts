@@ -14,7 +14,6 @@ Because the sketch is hand-drawn, read it for intent rather than precision: wobb
 If a <chat_instruction> or <current_spec> is present, use it while answering the questions as well as when writing the spec: the chat may clarify what part of the sketch means, and the current spec may already contain elements the sketch builds on.
 
 1. How many charts are drawn? Count the separate charts in the sketch. Each chart has its own plotting area, usually with its own axes. Several sets of marks drawn on the same axes form one chart with layers, not several charts; layers are covered in the next question. Legends, titles and notes are not separate charts. If there is more than one chart, describe how they are arranged (side by side, stacked vertically, or in a grid) and refer to them in reading order, as Chart 1, Chart 2 and so on, for the rest of your answers. If there is only one chart, skip the composition question at the end.
-
 2. What layers does each chart have? A layer is one set of marks within a chart’s plotting area. Signs of more than one layer include different mark types on the same axes (for example bars with a line over them), a reference line or text annotation drawn over the data, or groups of marks that show different quantities. Be careful with colour: marks in several colours that correspond to categories of one field (often shown in a legend) are usually a single layer with a colour encoding, not several layers.
 3. For each layer, describe:
 Mark: the kind of mark (bar, line, point, area, rule, text, and so on). If no standard mark fits, describe the shape; it may need to be built by combining simpler marks in layers.
@@ -28,7 +27,9 @@ Otherwise, concatenate the charts in the arrangement described in question 1: \`
 5. Output. In \`observations\`, give your answers to the questions above, numbered to match, in brief plain language. Leave out questions you skipped. Where the sketch is ambiguous, choose the most likely reading and say in a few words what you assumed. In \`spec\`, write the complete Vega-Lite spec that implements the instructions specified by your answers, any chat instruction, and the current spec.
     `,
         // Turn 1 when there is no sketch (chat and/or code only): a short prompt, no flowchart questions
-        withoutSketch: "TODO"
+    withoutSketch: `
+The provided inputs, containing a <chat_instruction>, <current_spec>, or both, describe a desired Vega-Lite specification. Produce the specification based on the provided instructions and the columns in <columns>. The <current_spec> may be an incomplete or broken spec that must be completed based on <chat_instruction>, or an old spec that must be replaced based on <chat_instruction>. Columns in <chat_instruction> will often approximate a column name rather than match it exactly; map them to the closest _plausible_ column in <columns>. If nothing matches, say that in \`observations\`. Put the resulting specification in \`spec\`. Very briefly note any assumptions made about the intended chart in \`observations\`.
+`
     },
 
     // Checking a candidate spec. Compile and runtime checks are code; only the visual review and the retry turns need prompts.
@@ -37,7 +38,9 @@ Otherwise, concatenate the charts in the arrangement described in question 1: \`
         reviewSystem: "TODO",
         review: "TODO",
         // Retry turns in the generation conversation (shared by fromScratch and refine)
-        fixErrors: "TODO",        // the latest compile/runtime errors follow it
+      fixErrors: `
+The previous specification caused errors (e.g., invalid JSON, invalid Vega-Lite, references to non-existent columns). The errors are provided in <errors>. Consider the errors and revise the specification, making the smallest changes required to address the errors, while still preserving the user's intent (gleaned from the user's inputs). Return the revised specification in \`spec\`.
+`,        // the latest compile/runtime errors follow it
         reviseFromReview: "TODO"  // the reviewer's issues follow it
     },
 

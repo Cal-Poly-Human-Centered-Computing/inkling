@@ -11,6 +11,10 @@ export const SpecOutput = z.object({
 });
 export type SpecOutput = z.infer<typeof SpecOutput>;
 
+// Retry turns return only the revised spec; the first turn's observations stay in the conversation
+export const SpecRevision = SpecOutput.pick({spec: true});
+export type SpecRevision = z.infer<typeof SpecRevision>;
+
 // The reviewer only reports; any revision happens in the generation conversation
 export const ReviewVerdict = z.object({
   matches: z.boolean(),

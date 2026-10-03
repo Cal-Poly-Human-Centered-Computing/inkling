@@ -1,9 +1,11 @@
 import prompts from './prompts';
-import type {LLM} from './prompting';
+import type {Conversation, LLM} from './prompting';
 import {renderSpec} from './render';
-import {ReviewVerdict, SpecOutput, type ColumnSchema} from './schemas';
+import {ReviewVerdict, SpecOutput, SpecRevision, type ColumnSchema} from './schemas';
 
 export type Pipelines = ReturnType<typeof createPipelines>;
+
+const MAX_COMPILE_RETRIES = 2;
 
 export type SketchToSpecInput = {
   image: string | null;
@@ -74,6 +76,23 @@ export function createPipelines(llm: LLM) {
   async function checkSpec(spec: string, columns: ColumnSchema) {
     const {errors, png} = await renderSpec(spec, columns);
     return {errors, png};
+  }
+
+  /**
+   * Checks the spec and, while it has errors, asks the generation conversation to fix them.
+   * Each retry turn carries only the latest errors. After the last retry, returns the last spec with its errors.
+   */
+  async function compileLoop(convo: Conversation, spec: string, columns: ColumnSchema) {
+    let check = await checkSpec(spec, columns);
+
+    for (let retry = 1; retry <= MAX_COMPILE_RETRIES && check.errors.length; retry++) {
+      console.info(`[compileLoop] retry ${retry}:`, check.errors);
+      const text = `${prompts.verify.fixErrors.trim()}\n\n<errors>\n${check.errors.join("\n")}\n</errors>`;
+      ({spec} = await convo.ask({text}, SpecRevision));
+      check = await checkSpec(spec, columns);
+    }
+
+    return {spec, ...check};
   }
 
   /**
@@ -171,11 +190,12 @@ export function createPipelines(llm: LLM) {
 
     // 1: Generate
 
-    const {spec, observations} = await generate(payload);
+    const {convo, spec: firstSpec, observations} = await generate(payload);
 
-    // 2: Compile and run against placeholder data. Retrying with the errors comes with the new generation step.
+    // 2: Compile and run against placeholder data, retrying with the errors
 
-    const check = await checkSpec(spec, payload.columns);
+    const check = await compileLoop(convo, firstSpec, payload.columns);
+    const spec = check.spec;
     if (check.errors.length || !check.png) {
       return {spec, observations, errors: check.errors.length ? check.errors : ['Spec could not be rendered']};
     }
