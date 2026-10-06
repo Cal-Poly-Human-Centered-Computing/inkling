@@ -5,7 +5,11 @@ import {sketchToSpec} from '$lib/server/server';
 /**
  * Endpoint to convert a sketch to Vega-Lite from scratch (no rendered visualization present)
  */
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
+  if (!locals.user) {
+    return json({ ok: false, error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
 

@@ -2,7 +2,11 @@ import type { RequestHandler } from '@sveltejs/kit';
 import { json } from '@sveltejs/kit';
 import {sendChat} from '$lib/server/server';
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
+  if (!locals.user) {
+    return json({ ok: false, error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
 

@@ -5,7 +5,11 @@ import { applyAnnotations } from '$lib/server/server';
 /**
  * Endpoint to apply the annotations the user has made to a rendered visualization, and return the updated Vega-Lite spec
  */
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
+  if (!locals.user) {
+    return json({ ok: false, error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const body = await request.json().catch(() => ({}));
 
