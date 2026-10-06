@@ -211,7 +211,7 @@
 
 	// dataset modal state
 	let showDatasetModal: boolean = false;
-	let datasetMode: 'file' | 'url' = 'file';
+	let datasetMode: 'file' | 'url' = 'url';
 	let datasetFile: File | null = null;
 	let datasetFileInput: HTMLInputElement | null = null;
 	let datasetUrl: string = '';
@@ -543,7 +543,7 @@
 
 	// dataset modal handlers
 	function openDatasetModal() {
-		datasetMode = 'file';
+		datasetMode = 'url';
 		datasetFile = null;
 		datasetUrl = '';
 		showDatasetModal = true;
@@ -630,9 +630,9 @@
 
 <div class="box" style="height:100%; display:flex; flex-direction:column;">
 	<div class="field" style="flex:0 0 auto; display:flex; align-items:center; gap:0.5rem;">
-		<button class="button is-light" aria-label="Upload sketch image" on:click={openUploadModal}>
-			<span class="icon is-small"><Fa icon={faUpload} /></span>
-		</button>
+<!--		<button class="button is-light" aria-label="Upload sketch image" on:click={openUploadModal}>-->
+<!--			<span class="icon is-small"><Fa icon={faUpload} /></span>-->
+<!--		</button>-->
 		<!-- dataset attach button to the right -->
 		<button class="button is-light" aria-label="Attach dataset" on:click={openDatasetModal}>
 			<span class="icon is-small"><Fa icon={faDatabase} /></span>
@@ -654,32 +654,32 @@
 </div>
 
 <!-- Upload modal -->
-{#if showUploadModal}
-	<div class="modal is-active" role="dialog" aria-modal="true" aria-label="Upload sketch dialog">
-		<div class="modal-background" role="button" tabindex="0" aria-label="Close upload dialog" on:click={cancelUpload} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelUpload(); }}></div>
-		<div class="modal-card">
-			<header class="modal-card-head">
-				<p class="modal-card-title">Upload sketch image</p>
-				<button class="delete" aria-label="close" on:click={cancelUpload}></button>
-			</header>
-			<section class="modal-card-body">
-				<div class="field">
-					<label class="label" for="upload-file-input">Choose image</label>
-					<div class="control">
-						<input id="upload-file-input" bind:this={fileInputEl} class="input" type="file" accept="image/*" on:change={onFileChange} />
-					</div>
-					{#if selectedFile}
-						<p class="help">Selected: {selectedFile.name}</p>
-					{/if}
-				</div>
-			</section>
-			<footer class="modal-card-foot">
-				<button class="button is-info" on:click={confirmUpload} disabled={!selectedFile}>Upload</button>&nbsp;
-				<button class="button" on:click={cancelUpload}>Cancel</button>
-			</footer>
-		</div>
-	</div>
-{/if}
+<!--{#if showUploadModal}-->
+<!--	<div class="modal is-active" role="dialog" aria-modal="true" aria-label="Upload sketch dialog">-->
+<!--		<div class="modal-background" role="button" tabindex="0" aria-label="Close upload dialog" on:click={cancelUpload} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelUpload(); }}></div>-->
+<!--		<div class="modal-card">-->
+<!--			<header class="modal-card-head">-->
+<!--				<p class="modal-card-title">Upload sketch image</p>-->
+<!--				<button class="delete" aria-label="close" on:click={cancelUpload}></button>-->
+<!--			</header>-->
+<!--			<section class="modal-card-body">-->
+<!--				<div class="field">-->
+<!--					<label class="label" for="upload-file-input">Choose image</label>-->
+<!--					<div class="control">-->
+<!--						<input id="upload-file-input" bind:this={fileInputEl} class="input" type="file" accept="image/*" on:change={onFileChange} />-->
+<!--					</div>-->
+<!--					{#if selectedFile}-->
+<!--						<p class="help">Selected: {selectedFile.name}</p>-->
+<!--					{/if}-->
+<!--				</div>-->
+<!--			</section>-->
+<!--			<footer class="modal-card-foot">-->
+<!--				<button class="button is-info" on:click={confirmUpload} disabled={!selectedFile}>Upload</button>&nbsp;-->
+<!--				<button class="button" on:click={cancelUpload}>Cancel</button>-->
+<!--			</footer>-->
+<!--		</div>-->
+<!--	</div>-->
+<!--{/if}-->
 
 <!-- Dataset modal -->
 {#if showDatasetModal}
@@ -696,8 +696,8 @@
 					<div class="control dataset-source-control" style="display:flex; align-items:center; gap:0.5rem; position:relative;">
 						<div class="select">
 							<select id="dataset-mode-select" bind:value={datasetMode} aria-label="Choose dataset source">
-								<option value="file">Upload CSV file</option>
-								<option value="url">Use URL</option>
+<!--								<option value="file">Upload CSV file</option>-->
+								<option value="url">URL</option>
 							</select>
 						</div>
 						{#if datasetMode === 'file'}
