@@ -621,11 +621,11 @@
 	// follow the system color scheme (setTheme is global to Monaco, so one call covers the editor)
 	$: if (monaco) monaco.editor.setTheme($isDark ? 'vs-dark' : 'vs');
 
-	// hide the help popover whenever the user switches away from file mode
-	$: if (datasetMode !== 'file') {
-		showDatasetHelp = false;
-		document.removeEventListener('mousedown', handleDocClick);
-	}
+	// // hide the help popover whenever the user switches away from file mode
+	// $: if (datasetMode !== 'file') {
+	// 	showDatasetHelp = false;
+	// 	document.removeEventListener('mousedown', handleDocClick);
+	// }
 </script>
 
 <div class="box" style="height:100%; display:flex; flex-direction:column;">
