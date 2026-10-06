@@ -2,6 +2,8 @@
 	import { onMount, onDestroy, tick } from 'svelte';
 	// no store helpers required here; `code` store is imported directly below
 	import { code } from "$lib/stores/code";
+	import { isDark } from "$lib/stores/theme";
+	import { plotTheme } from "$lib/utils/vegaTheme";
 	import {CanvasToolbar} from "$lib/components/index";
 	import Fa from 'svelte-fa';
 	import {faSpinner} from "@fortawesome/free-solid-svg-icons/faSpinner";
@@ -22,10 +24,19 @@
 	// selected tool state
 	let selectedTool: 'pen' | 'textbox' | 'selector' = 'pen';
 
+	// canvas background per theme; dark matches the vega-themes 'dark' background so there's no seam around the chart
+	const LIGHT_BG = '#ffffff';
+	const DARK_BG = '#333';
+
 	// small SVG pen cursor (inline data URL) - use a solid/filled pen icon so the cursor appears filled.
 	// Fallback to 'crosshair' if not supported.
-	const _penCursorSvg = encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="black" stroke="none"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>');
-	const PEN_CURSOR = `url("data:image/svg+xml;utf8,${_penCursorSvg}") 3 20, auto`;
+	function penCursor(dark: boolean) {
+		const svg = encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${dark ? 'white' : 'black'}" stroke="none"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`);
+		return `url("data:image/svg+xml;utf8,${svg}") 3 20, auto`;
+	}
+
+	// theme the canvas was last configured for; null until mounted
+	let appliedDark: boolean | null = null;
 
 	const CANVAS_PADDING = 14;
 
@@ -59,8 +70,8 @@
 				fabricCanvas.freeDrawingBrush.width = brushWidth * ratio;
 			}
 			// show a pen-style cursor while in drawing mode. Use fabric.js cursor properties if available;
-			fabricCanvas.freeDrawingCursor = PEN_CURSOR;
-			fabricCanvas.defaultCursor = PEN_CURSOR;
+			fabricCanvas.freeDrawingCursor = penCursor($isDark);
+			fabricCanvas.defaultCursor = penCursor($isDark);
 			fabricCanvas.selection = false;
 			fabricCanvas.getObjects().forEach((o: any) => (o.selectable = false));
 		} else if (selectedTool === 'selector') {
@@ -120,7 +131,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			// create an offscreen container for embed
 			const off = document.createElement('div');
 			// embed the spec as SVG
-			await vegaEmbed(off, specToUse, { renderer: 'svg', actions: false });
+			// vega-embed merges this config under the spec's own `config`, so specs can still override it
+			await vegaEmbed(off, specToUse, { renderer: 'svg', actions: false, config: plotTheme($isDark) });
 
 			const svgEl = off.querySelector('svg') as SVGElement | null;
 			if (!svgEl) throw new Error('vega-embed produced no SVG element');
@@ -130,6 +142,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			// Serialize SVG to a data URL
 			const serializer = new XMLSerializer();
 			let svgStr = serializer.serializeToString(svgEl);
+			svgStr = svgStr.replace(/url\([^)#]*#/g, 'url(#');
 			if (!svgStr.includes('xmlns')) svgStr = svgStr.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
 			if (!svgStr.includes('xmlns:xlink')) svgStr = svgStr.replace('<svg', '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
 			const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
@@ -209,6 +222,15 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		} catch (err) {
 			scheduleRender();
 		}
+	}
+
+	// when the system theme flips, restyle the canvas and re-render the chart; only the background image is swapped,
+	// so existing strokes/text stay put. `appliedDark` is set first so this block can't re-trigger itself.
+	$: if (fabricCanvas && appliedDark !== null && appliedDark !== $isDark) {
+		appliedDark = $isDark;
+		fabricCanvas.backgroundColor = $isDark ? DARK_BG : LIGHT_BG;
+		updateToolMode();
+		doRenderSpec().catch(() => {});
 	}
 
 	// const strokes = writable<Array<Array<{x:number,y:number}>>>([]);
@@ -344,7 +366,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			left: x,
 			top: y,
 			fontSize: 16,
-			fill: '#000000',
+			fill: $isDark ? '#ffffff' : '#000000',
 			fontFamily: 'Arial',
 			editable: true,
 			selectable: true,
@@ -408,9 +430,10 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		fabricCanvas = new Canvas(fabricCanvasEl, {
 			isDrawingMode: true,
 			selection: false,
-			backgroundColor: '#ffffff',
+			backgroundColor: $isDark ? DARK_BG : LIGHT_BG,
 			preserveObjectStacking: true
 		});
+		appliedDark = $isDark;
 
 		// ensure we have a proper pencil brush instance and initial settings
 		try {
@@ -594,7 +617,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		touch-action:none;
 		z-index:30;
 		border-radius: 8px;
-		border: 1px solid lightgray;
+		border: 1px solid var(--bulma-border);
 		transition: box-shadow 200ms ease, border-color 200ms ease;
 	}
 
@@ -608,7 +631,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: rgba(255, 255, 255, 0.8);
+		background: color-mix(in srgb, var(--color-float-bg) 80%, transparent);
 		pointer-events: all;
 		z-index: 1000;
 		margin: 20px;
@@ -618,7 +641,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		color: #333;
+		color: var(--color-float-text);
 		font-size: 16px;
 		font-weight: 500;
 		text-align: center;
