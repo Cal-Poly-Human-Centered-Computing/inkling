@@ -75,5 +75,6 @@
 
 	.rollback-button {
 		background-color: var(--color-rollback-changes);
+		color: black;
 	}
 </style>
