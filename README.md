@@ -1,11 +1,21 @@
 ## Environment Setup
 
-This project uses a server-side Anthropic API key for the "Apply Changes" feature.
+This project uses Supabase magic-link authentication and a server-side Anthropic API key for the "Apply Changes" feature.
 
 - Copy `.env.example` to `.env`.
+- Set `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY` from your Supabase project settings.
 - Set `CLAUDE_API_KEY` to your key.
 - Set `ANTHROPIC_WORKSPACE_ID` to your workspace ID.
 - Do not commit `.env`.
+
+In Supabase Authentication settings, enable the Email provider and add the local and deployed callback URLs:
+
+```
+http://localhost:5173/auth/callback
+https://your-domain.example/auth/callback
+```
+
+The workspace requires users to sign in with a magic link. Users request a link at `/auth`, then return through the callback URL to enter the workspace.
 
 ## Running the project
 

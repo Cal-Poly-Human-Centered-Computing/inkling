@@ -9,7 +9,7 @@
 	export let selected: 'pen' | 'textbox' | 'selector' = 'pen';
 	// brush controls (bindable from parent)
 	export let brushColor: string = '#ff0000';
-	export let brushWidth: number = 1;
+	export let brushWidth: number = 7;
 
 	export let enableDelete: boolean = false;
 	export let disableUndo: boolean = true;
@@ -90,10 +90,10 @@
 	<!-- Brush controls: color and size -->
 	<div style="display:flex; align-items:center; gap:8px; padding-left:8px;"
 	     class:invisible={selected !== 'pen'} aria-hidden={selected !== 'pen'} aria-disabled={selected !== 'pen'}>
-		<label for="brush-color" style="font-size:12px; color:var(--text-muted, #333);">Color</label>
+		<label for="brush-color" style="font-size:12px; color:var(--bulma-text);">Color</label>
 		<input id="brush-color" type="color" bind:value={brushColor} aria-label="Brush color" />
-		<label for="brush-size" style="font-size:12px; color:var(--text-muted, #333); padding-left:6px;">Size</label>
-		<input id="brush-size" type="range" min=".5" max="20" bind:value={brushWidth} aria-label="Brush size" />
+		<label for="brush-size" style="font-size:12px; color:var(--bulma-text); padding-left:6px;">Size</label>
+		<input id="brush-size" type="range" min="1" max="20" bind:value={brushWidth} aria-label="Brush size" />
 	</div>
 </div>
 

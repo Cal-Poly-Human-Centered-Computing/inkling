@@ -4,4 +4,21 @@
 
     --color-rollback-changes: gold;
 
+    /* palette: FFCAB1 peach, F7F0DE cream, F7E489 yellow, C1D7AE sage, 668961 green, 968E85 warm gray */
+    --color-cream: #F7F0DE;
+    --color-warm-gray: #968E85;
+    --color-warm-dark: #2a2723; /* dark neutral derived from the warm-gray hue */
+
+    /* floating surfaces we own (editor copy button, removed-lines overlay) */
+    --color-float-bg: var(--color-cream);
+    --color-float-text: #333;
+    --color-float-border: var(--color-warm-gray);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-float-bg: var(--color-warm-dark);
+        --color-float-text: var(--color-cream);
+        --color-float-border: var(--color-warm-gray);
+    }
 }
