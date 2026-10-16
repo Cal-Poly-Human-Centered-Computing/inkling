@@ -42,6 +42,49 @@ export function getColumnNames(): string[] {
     }
 }
 
+export type ColumnType = 'quantitative' | 'temporal' | 'nominal';
+
+// A column gets a type if at least this share of its sampled non-empty values look like that type
+const TYPE_THRESHOLD = 0.9;
+const SAMPLE_SIZE = 500;
+
+function looksTemporal(value: any): boolean {
+  if (typeof value !== 'string') return false;
+  // Require a date-like separator so strings like "42" or "Ford" aren't treated as dates
+  return /\d{1,4}[-/]\d{1,2}/.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+function estimateType(values: any[]): ColumnType {
+  const present = values.filter(v => v !== null && v !== undefined && v !== '');
+  if (present.length === 0) return 'nominal';
+
+  const share = (test: (v: any) => boolean) => present.filter(test).length / present.length;
+
+  // Rows from CSVs are parsed with d3's autoType, so numbers are already numbers; JSON datasets may have numeric strings
+  if (share(v => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)))) >= TYPE_THRESHOLD) {
+    return 'quantitative';
+  }
+  if (share(looksTemporal) >= TYPE_THRESHOLD) {
+    return 'temporal';
+  }
+  return 'nominal';
+}
+
+/**
+ * Column names with estimated Vega-Lite types. This is the only information about the dataset that gets
+ * sent to the server/LLM; the rows themselves stay on the client.
+ */
+export function getColumnSchema(): { name: string; type: ColumnType }[] {
+  const payload = readRaw();
+  const columns = payload?.columns ?? [];
+  const sample = (payload?.data ?? []).slice(0, SAMPLE_SIZE);
+
+  return columns.map(name => ({
+    name,
+    type: estimateType(sample.map(row => row?.[name]))
+  }));
+}
+
 function writeRaw(payload: PersistedDataset | null) {
   if (!isBrowser()) return;
   try {
@@ -123,3 +166,4 @@ export function readPersistedDataset(): PersistedDataset | null {
 // - setDatasetUrl(url)
 // - clearDatasetStore()
 // - readPersistedDataset()
+// - getColumnSchema()
