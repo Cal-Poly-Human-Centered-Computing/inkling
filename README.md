@@ -22,8 +22,24 @@ The workspace requires users to sign in with a magic link. Users request a link 
 To start a development server, run this command from the root directory:
 
 ```sh
+npm run dev
+```
+
+Or, if you want to visit the site from a different device:
+
+```sh
 npm run dev -- --host
 ```
+
+## Logging requests
+
+To log a session, start the dev server with a label:
+
+```sh
+EVAL_RECORD=baseline npm run dev
+```
+
+Each request you make in the app is saved to `eval/runs/<timestamp>-baseline/`, one folder per request: `input.json`, the canvas image, and `result.json` with the model's observations and the resulting spec. `index.html` in the run folder shows every request side by side and is updated after each one.
 
 ## Building
 

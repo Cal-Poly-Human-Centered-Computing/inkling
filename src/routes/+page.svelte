@@ -3,7 +3,8 @@
   import { code as codeStore } from '$lib/stores/code';
   import {get} from "svelte/store";
   import { conversationId as convIdStore } from '$lib/stores/conversationId';
-  import {getColumnNames} from "$lib/utils/datasetStore";
+  import { observations as observationsStore } from '$lib/stores/observations';
+  import {getColumnNames, getColumnSchema} from "$lib/utils/datasetStore";
 
   let uploadedFile: File | null = null;
   let canvasViewRef: any = null;
@@ -15,7 +16,6 @@
   let historyIndex = -1;
 
   let message = ''
-  let chatSending: boolean = false;
 
   function textInputIsActive() {
     return message.trim().length > 0;
@@ -28,62 +28,6 @@
   function handleUpload(e: CustomEvent) {
     uploadedFile = e.detail;
     console.log('Uploaded file:', uploadedFile);
-  }
-
-  async function handleSendChat(e: CustomEvent) {
-    // Block additional sends while waiting for the server
-    if (chatSending) return;
-    chatSending = true;
-    applying = true;
-
-    const bodyPayload: any = { currentSpec: get(codeStore), chatMessage: e.detail, columnNames: getColumnNames() };
-
-    try {
-      const resp = await fetch('/api/send-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload)
-      });
-
-      if (!resp.ok) {
-        const text = await resp.text();
-        console.error('Send chat failed:', resp.status, text);
-        return;
-      }
-
-      const jsonResp = await resp.json();
-      if (!jsonResp.ok) {
-        console.error('Send chat error:', jsonResp.error);
-        return;
-      }
-
-      const resultText: string = jsonResp.result ?? '';
-
-//       const resultText = `{
-//   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-//   "data": {
-//     "url": "https://vega.github.io/vega-datasets/data/cars.json"
-//   },
-//   "mark": "point",
-//   "encoding": {
-//     "x": {
-//       "field": "Horsepower",
-//       "type": "quantitative",
-//       "title": "Horsepower"
-//     },
-//     "y": {
-//       "field": "Miles_per_Gallon",
-//       "type": "quantitative",
-//       "title": "Miles per Gallon"
-//     }
-//   }
-// }`
-
-      await handleIncomingCodeUpdate(resultText);
-    } finally {
-      chatSending = false;
-      applying = false;
-    }
   }
 
   // helper: convert data URL (data:<mime>;base64,...) to a Blob
@@ -118,13 +62,20 @@
     }
   }
 
+  // Sends every active input (sketch or annotations, chat, current code) in one request.
+  // Triggered by the Apply Changes button and by pressing Enter in the chat box.
   async function handleApplyChanges() {
+    if (applying) return;
     applying = true;
+
+    // Read the chat text before any await: the chat box clears itself right after dispatching Enter
+    const chatMessage = message.trim() || null;
+
     try {
-      // Export canvas as base64 data URL for debugging and to send to the server
+      // Export the canvas only if something has been drawn on it
       let dataUrl: string | null = null;
       try {
-        if (canvasViewRef && typeof canvasViewRef.exportCanvasDataUrl === 'function') {
+        if (canvasIsActive() && canvasViewRef && typeof canvasViewRef.exportCanvasDataUrl === 'function') {
           dataUrl = await canvasViewRef.exportCanvasDataUrl('image/png', undefined, window.devicePixelRatio ?? 1);
           // FOR DEBUGGING: uncomment the below block to see a preview of the exported image
           // if (dataUrl) {
@@ -149,24 +100,19 @@
         return;
       }
 
-      let resp;
-
-      if (canvasViewRef.renderedVisPresent()) {
-        const bodyPayload: any = { image: dataUrl, currentSpec: get(codeStore), columnNames: getColumnNames() };
-        resp = await fetch('/api/apply-annotations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyPayload)
-        });
-      } else {
-        const bodyPayload: any = { image: dataUrl, columnNames: getColumnNames() };
-        console.log(bodyPayload)
-        resp = await fetch('/api/sketch-to-spec', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyPayload)
-        });
-      }
+      const bodyPayload = {
+        image: dataUrl,
+        chatMessage,
+        currentSpec: get(codeStore),
+        columnNames: getColumnNames(),
+        columns: getColumnSchema(),
+        renderedVis: canvasViewRef.renderedVisPresent()
+      };
+      const resp = await fetch('/api/apply-changes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload)
+      });
 
       if (!resp.ok) {
         const text = await resp.text();
@@ -181,6 +127,13 @@
       }
 
       const resultText: string = jsonResp.result ?? '';
+      observationsStore.set(jsonResp.observations ?? null);
+
+      // A spec that still has errors is shown anyway, so it can be fixed in the editor
+      if (jsonResp.errors?.length) {
+        console.warn('Returned spec has errors:', jsonResp.errors);
+      }
+      message = '';
 
 //       const resultText = `{
 //   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -264,7 +217,7 @@
 
       <!-- Chatbox pinned to bottom -->
       <div style="flex:0 0 auto; margin-top:0.5rem;">
-        <ChatBox bind:message={message} sending={chatSending} on:send={handleSendChat} />
+        <ChatBox bind:message={message} sending={applying} on:send={handleApplyChanges} />
       </div>
     </div>
 
