@@ -14,6 +14,7 @@
 	import JsonWorker from 'monaco-editor/language/json/json.worker?worker';
 	import { diffLines } from 'diff';
 	import { isDark } from '$lib/stores/theme';
+	import '../../app.css';
 
 	const dispatch = createEventDispatcher();
 	let editorContainer: HTMLDivElement | null = null;
@@ -628,18 +629,18 @@
 	// }
 </script>
 
-<div class="box" style="height:100%; display:flex; flex-direction:column;">
+<div style="height:100%; display:flex; flex-direction:column;">
 	<div class="field" style="flex:0 0 auto; display:flex; align-items:center; gap:0.5rem;">
 <!--		<button class="button is-light" aria-label="Upload sketch image" on:click={openUploadModal}>-->
 <!--			<span class="icon is-small"><Fa icon={faUpload} /></span>-->
 <!--		</button>-->
 		<!-- dataset attach button to the right -->
-		<button class="button is-light" aria-label="Attach dataset" on:click={openDatasetModal}>
+		<button class="button is-light accent-button" aria-label="Attach dataset" on:click={openDatasetModal}>
 			<span class="icon is-small"><Fa icon={faDatabase} /></span>
 		</button>
 	</div>
 
-	<div bind:this={editorContainer} class="content" style="flex:1 1 auto; min-height:0; border:1px solid var(--bulma-border); position:relative;">
+	<div bind:this={editorContainer} class="editor-container" style="flex:1 1 auto; min-height:0; border:1px solid var(--bulma-border); position:relative;">
 		<!-- Copy button placed in the editor overlay (top-right). Visible on hover or when editor has focus. -->
 		<button class="copy-button" type="button" aria-label={copied ? 'Copied' : 'Copy code'} title={copied ? 'Copied' : 'Copy'} on:click={copyToClipboard}>
 			<span class="icon is-small">
@@ -734,7 +735,7 @@
 				{/if}
 			</section>
 			<footer class="modal-card-foot">
-				<button class="button is-info" on:click={attachDataset} disabled={(datasetMode === 'file' && !datasetFile) || (datasetMode === 'url' && !datasetUrl)}>Attach</button>&nbsp;
+				<button class="button accent-button" on:click={attachDataset} disabled={(datasetMode === 'file' && !datasetFile) || (datasetMode === 'url' && !datasetUrl)}>Attach</button>&nbsp;
 				<button class="button" on:click={cancelDataset}>Cancel</button>
 			</footer>
 		</div>
@@ -800,10 +801,6 @@
 	}
   }
 
-  .box {
-	  padding: 12px;
-  }
-
   :global(.readonly-text-inline) {
   		background: rgba(128,128,128,0.22);
   		border-radius: 4px;
@@ -857,8 +854,9 @@
   }
 
   /* Copy button styles: positioned top-right inside .content and visible on hover/focus */
-  .content {
-    position: relative; /* ensure overlay positioning context */
+  .editor-container {
+	  position: relative; /* ensure overlay positioning context */
+	  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   }
   .copy-button {
     position: absolute;
@@ -883,8 +881,8 @@
   .copy-button:focus {
     outline: 2px solid rgba(0,0,0,0.12);
   }
-  .content:hover .copy-button,
-  .content:focus-within .copy-button,
+  .editor-container:hover .copy-button,
+  .editor-container:focus-within .copy-button,
   .copy-button:focus {
     opacity: 1;
     transform: translateY(0);

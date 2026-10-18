@@ -1,13 +1,29 @@
 :root {
-    --color-apply-changes-dark: seagreen;
-    --color-apply-changes-light: darkseagreen;
+    --color-light-gold: #f7e489ff;
+    --color-tea-green: #c1d7aeff;
+    --color-dusty-olive: #668961ff;
+    --color-lavender-gray: #78799A;
+    --color-platinum: #F4F4F6;
 
-    --color-rollback-changes: gold;
-
-    /* palette: FFCAB1 peach, F7F0DE cream, F7E489 yellow, C1D7AE sage, 668961 green, 968E85 warm gray */
-    --color-cream: #F7F0DE;
+    --color-light-cream: #FFFDFB;
+    --color-cream: #F3E8CE;
     --color-warm-gray: #968E85;
     --color-warm-dark: #2a2723; /* dark neutral derived from the warm-gray hue */
+    --color-very-dark: #161512;
+
+
+    --color-apply-changes-dark: var(--color-dusty-olive);
+    --color-apply-changes-light: var(--color-tea-green);
+
+    --color-rollback-changes: var(--color-light-gold);
+
+
+    /* light mode color assignments */
+    --color-bg: var(--color-light-cream);
+    --color-outline: var(--color-warm-gray);
+
+    --color-accent: var(--color-lavender-gray);
+    --color-accent-text: var(--color-platinum);
 
     /* floating surfaces we own (editor copy button, removed-lines overlay) */
     --color-float-bg: var(--color-cream);
@@ -15,10 +31,21 @@
     --color-float-border: var(--color-warm-gray);
 }
 
+.accent-button {
+    background-color: var(--color-accent);
+    color: var(--color-accent-text);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
 @media (prefers-color-scheme: dark) {
     :root {
         --color-float-bg: var(--color-warm-dark);
         --color-float-text: var(--color-cream);
         --color-float-border: var(--color-warm-gray);
+
+        --color-bg: var(--color-very-dark);
+
+        --color-accent: var(--color-lavender-gray);
+        --color-accent-text: var(--color-warm-dark);
     }
 }

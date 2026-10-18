@@ -13,22 +13,24 @@
 	}
 </script>
 
-<div class="box" style="padding:0.4rem; border-top:1px solid #eee;">
-	<div class="field has-addons">
-		<div class="control is-expanded">
-			<input class="input" type="text" placeholder="Ask the AI to modify the spec..." aria-label="Text input"
-				   class:is-active={message.trim().length > 0}
-				   bind:value={message}
-				   on:keydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (!sending) send(); } }}
-				   disabled={sending}
-				   aria-busy={sending} />
-		</div>
-	</div>
+<div class="input-container">
+	<input class="input" type="text" placeholder="Ask the AI to modify the spec..." aria-label="Text input"
+		   class:is-active={message.trim().length > 0}
+		   bind:value={message}
+		   on:keydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (!sending) send(); } }}
+		   disabled={sending}
+		   aria-busy={sending} />
 </div>
 
 <style>
+	.input-container {
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+		border-radius: var(--bulma-radius-medium);
+	}
+
 	.input {
 		transition: box-shadow 200ms ease, border-color 200ms ease;
+		border-radius: var(--bulma-radius-medium);
 	}
 
 	.input:focus {

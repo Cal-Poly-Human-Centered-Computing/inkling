@@ -38,8 +38,6 @@
 	// theme the canvas was last configured for; null until mounted
 	let appliedDark: boolean | null = null;
 
-	const CANVAS_PADDING = 14;
-
 	let editingText: boolean = false;
 	let objectSelected: boolean = false;
 
@@ -302,11 +300,9 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 		const container = boxEl || document.body;
 		const rect = container.getBoundingClientRect();
-		const width = rect.width-CANVAS_PADDING;
-		const height = rect.height-CANVAS_PADDING;
 		const ratio = window.devicePixelRatio || 1;
 		try {
-			fabricCanvas.setDimensions({ width, height });
+			fabricCanvas.setDimensions({ width: rect.width, height: rect.height });
 
 			// Adjust brush to account for pixel ratio so stroke thickness is consistent visually
 			if (fabricCanvas.freeDrawingBrush) {
@@ -574,7 +570,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 </script>
 
-<div class="box" bind:this={boxEl}>
+<div class="canvas-container" bind:this={boxEl}>
 
 	<div bind:this={toolbarEl} style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 10px 10px 0 10px; z-index:10000;">
 		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete={objectSelected}
@@ -606,6 +602,19 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		z-index: 100000 !important;
 	}
 
+	.canvas-container {
+		height: 100%;
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		align-items: center;
+		padding: 0;
+		margin: 0;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+		border-radius: var(--bulma-radius-medium);
+	}
+
 	canvas {
 		position:absolute;
 		left:0;
@@ -616,7 +625,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		height:100%;
 		touch-action:none;
 		z-index:30;
-		border-radius: 8px;
+		border-radius: var(--bulma-radius-medium);
 		border: 1px solid var(--bulma-border);
 		transition: box-shadow 200ms ease, border-color 200ms ease;
 	}
