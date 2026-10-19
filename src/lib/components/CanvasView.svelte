@@ -288,6 +288,9 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 					backgroundImg.canvas = fabricCanvas;
 					fabricCanvas.backgroundImage = backgroundImg;
 				}
+				// in case the user has switched between light and dark mode, keep the theme consistent
+				fabricCanvas.backgroundColor = $isDark ? DARK_BG : LIGHT_BG;
+
 				fabricCanvas.requestRenderAll()
 			});
 		} catch (err) {
