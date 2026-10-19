@@ -2,7 +2,6 @@
   import {CodeEditor, ChatBox, VersionControlToolbar, CanvasView} from '$lib/components';
   import { code as codeStore } from '$lib/stores/code';
   import {get} from "svelte/store";
-  import { conversationId as convIdStore } from '$lib/stores/conversationId';
   import { observations as observationsStore } from '$lib/stores/observations';
   import {getColumnNames, getColumnSchema} from "$lib/utils/datasetStore";
   import DatasetToolbar from "$lib/components/DatasetToolbar.svelte";
