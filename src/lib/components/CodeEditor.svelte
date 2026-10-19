@@ -572,6 +572,8 @@
   .editor-container {
 	  position: relative; /* ensure overlay positioning context */
 	  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+	  border-radius: var(--bulma-radius-medium);
+	  overflow: hidden;
   }
   .copy-button {
     position: absolute;
