@@ -5,6 +5,7 @@
   import { conversationId as convIdStore } from '$lib/stores/conversationId';
   import { observations as observationsStore } from '$lib/stores/observations';
   import {getColumnNames, getColumnSchema} from "$lib/utils/datasetStore";
+  import DatasetToolbar from "$lib/components/DatasetToolbar.svelte";
 
   let uploadedFile: File | null = null;
   let canvasViewRef: any = null;
@@ -190,6 +191,10 @@
     }
   }
 
+  function handleDatasetAttached() {
+    codeEditorRef.handleDatasetAttached();
+  }
+
 
   function handleRollbackChanges() {
     showRollbackConfirmationModal = true;
@@ -210,6 +215,10 @@
 <div class="container is-fluid" style="height:100vh; padding:1rem; background-color: var(--color-bg)">
   <div class="columns" style="height:100%;">
     <div class="column is-half" style="display:flex; flex-direction:column; padding-right:0.5rem;">
+      <div style="flex: 0 0 auto; height: 3rem;">
+        <DatasetToolbar on:datasetAttached={handleDatasetAttached}></DatasetToolbar>
+      </div>
+
       <!-- Code editor area -->
       <div style="flex:1 1 auto; min-height:0;">
         <CodeEditor bind:this={codeEditorRef} on:upload={handleUpload} />
@@ -223,7 +232,7 @@
 
     <div class="column is-half" style="display:flex; flex-direction:column; padding-left:0.5rem;">
       <!-- VersionControlToolbar -->
-      <div style="flex:0 0 auto;">
+      <div style="flex:0 0 auto; height: 3rem;">
         <VersionControlToolbar on:applyChanges={handleApplyChanges} on:rollbackChanges={handleRollbackChanges}
                                canApply={textInputIsActive() || canvasIsActive()} canRollback={historyStacks.length >= 1} applying={applying} />
       </div>

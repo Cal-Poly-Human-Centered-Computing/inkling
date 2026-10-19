@@ -46,6 +46,6 @@
         --color-bg: var(--color-very-dark);
 
         --color-accent: var(--color-lavender-gray);
-        --color-accent-text: var(--color-warm-dark);
+        --color-accent-text: var(--color-light-cream);
     }
 }

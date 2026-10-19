@@ -1,14 +1,12 @@
 <script lang="ts">
 	import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
 	import Fa from 'svelte-fa';
-	import { faUpload, faDatabase } from '@fortawesome/free-solid-svg-icons';
 	import { faCopy } from '@fortawesome/free-solid-svg-icons/faCopy';
 	import { faCheck } from '@fortawesome/free-solid-svg-icons/faCheck';
 	import { code as codeStore } from '$lib/stores/code';
 	import {get} from "svelte/store";
 	import type * as Monaco from 'monaco-editor';
-	import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
-	import {getDataToken, setDataset} from "$lib/utils/datasetStore";
+	import {getDataToken, type PersistedDataset} from "$lib/utils/datasetStore";
 	import constrainedEditor from 'constrained-editor-plugin';
 	import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
 	import JsonWorker from 'monaco-editor/language/json/json.worker?worker';
@@ -26,6 +24,9 @@
 	let ignoreModelChange = false;
 	let constrainedInstance: any = null;
 
+	// copy button state
+	let copied = false;
+
 	// Decorations added to indicate server-returned changes (cleared on next local edit)
 	let serverChangeDecorationIds: string[] = [];
 	type RemovedChunkInfo = { lineCount: number; text: string };
@@ -35,6 +36,12 @@
 		| null = null;
 	let removedOverlayWidget: Monaco.editor.IContentWidget | null = null;
 	let removedOverlayDomNode: HTMLDivElement | null = null;
+
+	// hold schema and data enforced into any incoming spec
+	const schema = "https://vega.github.io/schema/vega-lite/v6.json";
+	let data: PersistedDataset | null = null;
+
+	let specHistory: string[] = []
 
 	function applyServerDiffDecorations(prevText: string, newText: string) {
 		if (!editorModel || !monaco) return;
@@ -181,9 +188,6 @@
 		closeRemovedLinesOverlay();
 	}
 
-	// copy button state
-	let copied = false;
-
 	/**
 	 * Copy the full spec (stored in `codeStore`) to the clipboard.
 	 * Uses navigator.clipboard when available.
@@ -204,29 +208,6 @@
 	    setTimeout(() => { copied = false; }, 1500);
 	    dispatch('copied');
 	}
-
-	// upload modal state
-	let showUploadModal = false;
-	let selectedFile: File | null = null;
-	let fileInputEl: HTMLInputElement | null = null;
-
-	// dataset modal state
-	let showDatasetModal: boolean = false;
-	let datasetMode: 'file' | 'url' = 'url';
-	let datasetFile: File | null = null;
-	let datasetFileInput: HTMLInputElement | null = null;
-	let datasetUrl: string = '';
-
-	// dataset help popover state
-	let showDatasetHelp = false;
-	let helpButtonEl: HTMLButtonElement | null = null;
-	let helpPopoverEl: HTMLDivElement | null = null;
-
-	// hold canonical schema and data enforced into any incoming spec
-	const schema = "https://vega.github.io/schema/vega-lite/v6.json";
-	let data: any = null;
-
-	let specHistory: string[] = []
 
 	function getReadonlyText() {
 		let str = JSON.stringify({"$schema": schema, "data": data}, null, "  ");
@@ -393,6 +374,15 @@
 	});
 
 	/**
+	 * Called from page.svelte when the user attaches a dataset (dispatched from DatasetToolbar.svelte)
+	 */
+	export async function handleDatasetAttached() {
+		data = getDataToken();
+
+		await initializeEditor();
+	}
+
+	/**
 	 * Called from page.svelte whenever the user applies changes from the canvas
 	 * newCode is the full JSON text  returned by the AI server
 	 * @param newCode
@@ -507,139 +497,13 @@
 	    try {
 	        if (editorContainer && containerPointerHandler) editorContainer.removeEventListener('pointerdown', containerPointerHandler);
 	    } catch (err) {}
-	    try {
-			// ensure any document listener used by the dataset help popover is removed
-			if (typeof document !== 'undefined') {
-				document.removeEventListener('mousedown', handleDocClick);
-			}
-		} catch (err) {}
 	});
-
-	function openUploadModal() {
-		selectedFile = null;
-		showUploadModal = true;
-		setTimeout(() => fileInputEl?.focus(), 0);
-	}
-
-	function onFileChange(e: Event) {
-		const input = e.target as HTMLInputElement;
-		if (input.files && input.files[0]) {
-			selectedFile = input.files[0];
-		} else {
-			selectedFile = null;
-		}
-	}
-
-	function confirmUpload() {
-		if (selectedFile) {
-			dispatch('upload', selectedFile);
-		}
-		showUploadModal = false;
-	}
-
-	function cancelUpload() {
-		selectedFile = null;
-		showUploadModal = false;
-	}
-
-	// dataset modal handlers
-	function openDatasetModal() {
-		datasetMode = 'url';
-		datasetFile = null;
-		datasetUrl = '';
-		showDatasetModal = true;
-		setTimeout(() => datasetFileInput?.focus(), 0);
-	}
-
-	function onDatasetFileChange(e: Event) {
-		const input = e.target as HTMLInputElement;
-		if (input.files && input.files[0]) datasetFile = input.files[0];
-		else datasetFile = null;
-	}
-
-	async function attachDataset() {
-		// close any help popover when confirming
-		showDatasetHelp = false;
-		document.removeEventListener('mousedown', handleDocClick);
-		if (datasetMode === 'file' && datasetFile) {
-			dispatch('attachDataset', { kind: 'file', file: datasetFile });
-			showDatasetModal = false;
-		} else if (datasetMode === 'url' && datasetUrl.trim()) {
-			datasetUrl = datasetUrl.trim()
-			data = { url: datasetUrl }
-			try {
-				const res = await loadDatasetFromUrlHelper(datasetUrl);
-				console.log('Dataset loaded via helper:', res);
-
-				setDataset(res.data, res.columns, datasetUrl);
-
-				// reset the editor contents with the new dataset
-				await initializeEditor();
-
-				// const bodyPayload: any = { convId: get(convIdStore), columnNames: getColumnNames(), exampleRow: getFirstRow() };
-
-				// const resp = await fetch('/api/upload-column-names', {
-				// 	method: 'POST',
-				// 	headers: { 'Content-Type': 'application/json' },
-				// 	body: JSON.stringify(bodyPayload)
-				// });
-				//
-				// if (!resp.ok) {
-				// 	console.error('Upload Column Names failed');
-				// 	return;
-				// }
-			} catch (err) {
-				console.error('Failed to load dataset via helper:', err);
-			}
-			showDatasetModal = false;
-		}
-	}
-
-	function cancelDataset() {
-		datasetFile = null;
-		datasetUrl = '';
-		// ensure help popover closed when cancelling
-		showDatasetHelp = false;
-		document.removeEventListener('mousedown', handleDocClick);
-		showDatasetModal = false;
-	}
-
-	// helpers for the dataset help popover
-	function toggleDatasetHelp() {
-		showDatasetHelp = !showDatasetHelp;
-		if (showDatasetHelp) document.addEventListener('mousedown', handleDocClick);
-		else document.removeEventListener('mousedown', handleDocClick);
-	}
-
-	function handleDocClick(e: MouseEvent) {
-		const target = e.target as Node;
-		if (!helpPopoverEl?.contains(target) && !helpButtonEl?.contains(target)) {
-			showDatasetHelp = false;
-			document.removeEventListener('mousedown', handleDocClick);
-		}
-	}
 
 	// follow the system color scheme (setTheme is global to Monaco, so one call covers the editor)
 	$: if (monaco) monaco.editor.setTheme($isDark ? 'vs-dark' : 'vs');
-
-	// // hide the help popover whenever the user switches away from file mode
-	// $: if (datasetMode !== 'file') {
-	// 	showDatasetHelp = false;
-	// 	document.removeEventListener('mousedown', handleDocClick);
-	// }
 </script>
 
 <div style="height:100%; display:flex; flex-direction:column;">
-	<div class="field" style="flex:0 0 auto; display:flex; align-items:center; gap:0.5rem;">
-<!--		<button class="button is-light" aria-label="Upload sketch image" on:click={openUploadModal}>-->
-<!--			<span class="icon is-small"><Fa icon={faUpload} /></span>-->
-<!--		</button>-->
-		<!-- dataset attach button to the right -->
-		<button class="button is-light accent-button" aria-label="Attach dataset" on:click={openDatasetModal}>
-			<span class="icon is-small"><Fa icon={faDatabase} /></span>
-		</button>
-	</div>
-
 	<div bind:this={editorContainer} class="editor-container" style="flex:1 1 auto; min-height:0; border:1px solid var(--bulma-border); position:relative;">
 		<!-- Copy button placed in the editor overlay (top-right). Visible on hover or when editor has focus. -->
 		<button class="copy-button" type="button" aria-label={copied ? 'Copied' : 'Copy code'} title={copied ? 'Copied' : 'Copy'} on:click={copyToClipboard}>
@@ -654,153 +518,7 @@
 	</div>
 </div>
 
-<!-- Upload modal -->
-<!--{#if showUploadModal}-->
-<!--	<div class="modal is-active" role="dialog" aria-modal="true" aria-label="Upload sketch dialog">-->
-<!--		<div class="modal-background" role="button" tabindex="0" aria-label="Close upload dialog" on:click={cancelUpload} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelUpload(); }}></div>-->
-<!--		<div class="modal-card">-->
-<!--			<header class="modal-card-head">-->
-<!--				<p class="modal-card-title">Upload sketch image</p>-->
-<!--				<button class="delete" aria-label="close" on:click={cancelUpload}></button>-->
-<!--			</header>-->
-<!--			<section class="modal-card-body">-->
-<!--				<div class="field">-->
-<!--					<label class="label" for="upload-file-input">Choose image</label>-->
-<!--					<div class="control">-->
-<!--						<input id="upload-file-input" bind:this={fileInputEl} class="input" type="file" accept="image/*" on:change={onFileChange} />-->
-<!--					</div>-->
-<!--					{#if selectedFile}-->
-<!--						<p class="help">Selected: {selectedFile.name}</p>-->
-<!--					{/if}-->
-<!--				</div>-->
-<!--			</section>-->
-<!--			<footer class="modal-card-foot">-->
-<!--				<button class="button is-info" on:click={confirmUpload} disabled={!selectedFile}>Upload</button>&nbsp;-->
-<!--				<button class="button" on:click={cancelUpload}>Cancel</button>-->
-<!--			</footer>-->
-<!--		</div>-->
-<!--	</div>-->
-<!--{/if}-->
-
-<!-- Dataset modal -->
-{#if showDatasetModal}
-	<div class="modal is-active" role="dialog" aria-modal="true" aria-label="Attach dataset dialog">
-		<div class="modal-background" role="button" tabindex="0" aria-label="Close dataset dialog" on:click={cancelDataset} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelDataset(); }}></div>
-		<div class="modal-card">
-			<header class="modal-card-head">
-				<p class="modal-card-title">Attach dataset</p>
-				<button class="delete" aria-label="close" on:click={cancelDataset}></button>
-			</header>
-			<section class="modal-card-body">
-				<div class="field">
-					<label class="label" for="dataset-mode-select">Source</label>
-					<div class="control dataset-source-control" style="display:flex; align-items:center; gap:0.5rem; position:relative;">
-						<div class="select">
-							<select id="dataset-mode-select" bind:value={datasetMode} aria-label="Choose dataset source">
-<!--								<option value="file">Upload CSV file</option>-->
-								<option value="url">URL</option>
-							</select>
-						</div>
-						{#if datasetMode === 'file'}
-							<button class="button is-white help-icon-button" aria-label="Dataset help" bind:this={helpButtonEl} on:click={toggleDatasetHelp} aria-expanded={showDatasetHelp}>
-								<span class="icon is-small">?</span>
-							</button>
-							{#if showDatasetHelp}
-								<div bind:this={helpPopoverEl} class="dataset-help-popover" role="dialog" aria-live="polite">
-									<p style="margin:0; font-size:0.9rem;">Only CSV column names (not data values) are sent to the AI server to build the Vega-Lite specifications.</p>
-								</div>
-							{/if}
-						{/if}
-					</div>
-				</div>
-
-				{#if datasetMode === 'file'}
-					<div class="field">
-						<label class="label" for="dataset-file-input">CSV file</label>
-						<div class="control">
-							<input id="dataset-file-input" bind:this={datasetFileInput} class="input" type="file" accept=".csv,text/csv" on:change={onDatasetFileChange} />
-						</div>
-						{#if datasetFile}
-							<p class="help">Selected: {datasetFile.name}</p>
-						{/if}
-					</div>
-				{:else}
-					<div class="field">
-						<label class="label" for="dataset-url-input">Dataset URL</label>
-						<div class="control">
-							<input id="dataset-url-input" class="input" type="url" placeholder="https://example.com/data.csv or .json" bind:value={datasetUrl} />
-						</div>
-						<p class="help">You can use public URLs like https://vega.github.io/vega-datasets/data/cars.json</p>
-					</div>
-				{/if}
-			</section>
-			<footer class="modal-card-foot">
-				<button class="button accent-button" on:click={attachDataset} disabled={(datasetMode === 'file' && !datasetFile) || (datasetMode === 'url' && !datasetUrl)}>Attach</button>&nbsp;
-				<button class="button" on:click={cancelDataset}>Cancel</button>
-			</footer>
-		</div>
-	</div>
-{/if}
-
 <style>
-  /* Default (light) theme styles */
-  @media (prefers-color-scheme: light) {
-	/* dataset help styles (light) */
-	.dataset-source-control .help-icon-button {
-		border-radius: 50%;
-		width: 1.6rem;
-		height: 1.6rem;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0;
-		border: 1px solid rgba(0,0,0,0.08);
-	}
-	.dataset-help-popover {
-		position: absolute;
-		top: 2.4rem;
-		left: 0;
-		z-index: 40;
-		background: white;
-		border: 1px solid #e6e6e6;
-		padding: 0.5rem;
-		border-radius: 6px;
-		width: 260px;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-		font-size: 0.9rem;
-	}
-  }
-
-  /* Dark theme styles */
-  @media (prefers-color-scheme: dark) {
-
-	/* dataset help styles (dark) */
-	.dataset-source-control .help-icon-button {
-		border-radius: 50%;
-		width: 1.6rem;
-		height: 1.6rem;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		padding: 0;
-		border: 1px solid rgba(255,255,255,0.06);
-	}
-	.dataset-help-popover {
-		position: absolute;
-		top: 2.4rem;
-		left: 0;
-		z-index: 40;
-		background: #0f0f0f;
-		border: 1px solid rgba(255,255,255,0.06);
-		padding: 0.5rem;
-		border-radius: 6px;
-		width: 260px;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.6);
-		font-size: 0.9rem;
-		color: #eaeaea;
-	}
-  }
-
   :global(.readonly-text-inline) {
   		background: rgba(128,128,128,0.22);
   		border-radius: 4px;
