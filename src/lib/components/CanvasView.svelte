@@ -113,12 +113,15 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		// remain on top. Uses dynamic import of vega-embed to avoid SSR issues.
 		if (typeof window === 'undefined' || !fabricCanvas) return;
 
-		const specAny: any = $code;
-
-		// if code store is a string, try to parse it as JSON; otherwise pass through
-		let specToUse: any = specAny;
-		if (typeof specAny === 'string') {
-			try { specToUse = JSON.parse(specAny); } catch (err) { specToUse = specAny; }
+		let specStr: string = $code;
+		let specObj: any;
+		try {
+			specObj = JSON.parse(specStr);
+		} catch (err) {
+			// invalid JSON will throw errors if it's passed through vegaEmbed, so just pass an empty object
+			// TODO: instead of just logging it, show the user the syntax error
+			console.log(err);
+			specObj = {};
 		}
 
 		try {
@@ -130,7 +133,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			const off = document.createElement('div');
 			// embed the spec as SVG
 			// vega-embed merges this config under the spec's own `config`, so specs can still override it
-			await vegaEmbed(off, specToUse, { renderer: 'svg', actions: false, config: plotTheme($isDark) });
+			await vegaEmbed(off, specObj, { renderer: 'svg', actions: false, config: plotTheme($isDark) });
 
 			const svgEl = off.querySelector('svg') as SVGElement | null;
 			if (!svgEl) throw new Error('vega-embed produced no SVG element');

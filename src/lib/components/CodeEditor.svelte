@@ -394,11 +394,8 @@
 		let finalObj: any = null;
 		let finalString = '';
 
-		console.log(newCode);
-
 		try {
 			const parsed = JSON.parse(newCode);
-			console.log(parsed);
 			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
 				const rest: any = {};
 				for (const k of Object.keys(parsed)) {
