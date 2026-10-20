@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount, onDestroy, tick } from 'svelte';
-	// no store helpers required here; `code` store is imported directly below
 	import { code } from "$lib/stores/code";
 	import { isDark } from "$lib/stores/theme";
 	import { plotTheme } from "$lib/utils/vegaTheme";
@@ -42,6 +41,12 @@
 
 	let editingText: boolean = false;
 	let objectSelected: boolean = false;
+
+	// track each series of edits before/between changes applied
+	export let historyStacks: Array<Array<string>> = [];
+	let currentHistoryStack: Array<string> = [];
+	// track where we are in currentHistoryStack
+	export let historyIndex = -1;
 
 	function handleSelectTool(e: CustomEvent) {
 		selectedTool = e.detail;
@@ -236,18 +241,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		doRenderSpec().catch(() => {});
 	}
 
-	// const strokes = writable<Array<Array<{x:number,y:number}>>>([]);
-	// const texts = writable<Array<{id:string,x:number,y:number,text:string,width?:number,height?:number,fontSize?:string,fontFamily?:string,fontWeight?:string,fontStyle?:string}>>([]);
-
-	// track each series of edits before/between changes applied
-	export let historyStacks: Array<Array<string>> = [];
-	let currentHistoryStack: Array<string> = [];
-	// track where we are in currentHistoryStack
-	export let historyIndex = -1;
-
-	let disableUndo = true;
-	let disableRedo = true;
-
 	function snapshot() {
 		const background = fabricCanvas.backgroundImage;
 
@@ -258,8 +251,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		currentHistoryStack = currentHistoryStack.slice(0, historyIndex + 1);
 		currentHistoryStack.push(snap);
 		historyIndex = currentHistoryStack.length - 1;
-		disableUndo = false;
-		disableRedo = true;
 
 		fabricCanvas.backgroundImage = background;
 	}
@@ -268,18 +259,12 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		if (historyIndex <= 0) return;
 		historyIndex--;
 		restore(currentHistoryStack[historyIndex]);
-		if (historyIndex == -1) {
-			disableUndo = true;
-		}
 	}
 
 	export function redo() {
 		if (historyIndex >= currentHistoryStack.length - 1) return;
 		historyIndex++;
 		restore(currentHistoryStack[historyIndex]);
-		if (historyIndex === currentHistoryStack.length - 1) {
-			disableRedo = true;
-		}
 	}
 
 	function restore(snap: string) {
@@ -440,7 +425,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		disposeFabricNavigation = installFabricNavigation(fabricCanvas);
 		appliedDark = $isDark;
 
-		// ensure we have a proper pencil brush instance and initial settings
 		try {
 			// Some Fabric builds create a default freeDrawingBrush; create explicit PencilBrush
 			if (!fabricCanvas.freeDrawingBrush || fabricCanvas.freeDrawingBrush.constructor.name !== 'PencilBrush') {
@@ -457,7 +441,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			// Ensure the canvas cursor/tool mode matches the selected tool on mount
 			updateToolMode();
 		snapshot();
-		disableUndo = true;
 
 		// snapshot whenever something is added or changed
 		fabricCanvas.on('object:modified', snapshot)
@@ -505,7 +488,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		fabricCanvas = null;
 	});
 
-	// Exported helper: clear all overlays (strokes and texts) and snapshot the cleared state
 	function clearOverlays() {
 		// remove all objects from the Fabric canvas
 		const objs = (fabricCanvas.getObjects && fabricCanvas.getObjects()) ? fabricCanvas.getObjects().slice() : [];
@@ -655,14 +637,15 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	<div bind:this={toolbarEl} style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 10px 10px 0 10px; z-index:10000;">
 		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete={objectSelected}
 					   on:selectTool={handleSelectTool} on:delete={deleteSelectedObject}
-					   on:undo={undo} disableUndo={disableUndo} on:redo={redo} disableRedo={disableRedo} />
+					   on:undo={undo} on:redo={redo}
+					   disableUndo={historyIndex == 0}
+					   disableRedo={currentHistoryStack.length <= historyIndex + 1} />
 	</div>
 
-	<!-- Fabric.js canvas (annotation surface). Vega embed will be added later underneath this layer. -->
+	<!-- Fabric.js canvas with the rendered vis as the background -->
 	<canvas bind:this={fabricCanvasEl} class:is-active={hasCanvasObjects()}>
 	</canvas>
 
-	<!-- Applying overlay with spinner and status text -->
 	{#if applying}
 		<div class="applying-overlay" aria-live="polite" aria-busy="true">
 			<div class="applying-status">
@@ -677,7 +660,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 <style>
 	/* Ensure common modal/dialog selectors sit above the canvas and overlays in all themes
    Force a very high z-index so third-party modals (Bootstrap, Bulma, native dialog, etc.)
-   will render above the canvas. This avoids detecting modal state and is a minimal change. */
+   will render above the canvas */
 	:global(dialog[open]), :global(.modal), :global([role="dialog"]), :global(.modal-backdrop) {
 		z-index: 100000 !important;
 	}
@@ -711,7 +694,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		transition: box-shadow 200ms ease, border-color 200ms ease;
 	}
 
-	/* overlay spinner styles */
 	.applying-overlay {
 		position: absolute;
 		left: 0;
@@ -734,16 +716,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		font-size: 16px;
 		font-weight: 500;
 		text-align: center;
-	}
-
-	.box {
-		height:100%;
-		position:relative;
-		display:flex;
-		flex-direction:column;
-		justify-content: center;
-		align-items: center;
-		padding: 0;
 	}
 
 	canvas.is-active {

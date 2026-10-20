@@ -7,7 +7,7 @@
 
 	const dispatch = createEventDispatcher();
 	export let selected: 'pen' | 'textbox' | 'selector' = 'pen';
-	// brush controls (bindable from parent)
+
 	export let brushColor: string = '#000000';
 	export let brushWidth: number = 7;
 
@@ -33,17 +33,22 @@
 	}
 </script>
 
-<!-- Container uses flex with center alignment so all buttons line up vertically -->
 <div class="toolbar" style="display:flex; align-items:center; justify-content:space-between; padding:0.5rem; width: 100%">
 	<!-- Undo/Redo buttons on the left -->
 	<div style="display:flex; align-items:center; gap:0.5rem;">
 		<div class="buttons" role="toolbar" aria-label="Drawing tools" style="display:flex; align-items:center; gap:0.5rem;">
-			<button class="button toolbar-button square is-small" on:click={undo} aria-label="Undo">
+			<button class="button toolbar-button square is-small"
+					on:click={undo}
+					aria-label="Undo"
+					disabled={disableUndo}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faUndo} />
 				</span>
 			</button>
-			<button class="button toolbar-button square is-small" on:click={redo} aria-label="Redo">
+			<button class="button toolbar-button square is-small"
+					on:click={redo}
+					aria-label="Redo"
+					disabled={disableRedo}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faRedo} />
 				</span>
@@ -98,7 +103,6 @@
 </div>
 
 <style>
-	/* Ensure toolbar buttons align vertically; default buttons are not force-square */
 	:global(.toolbar-button) {
 		display: inline-flex !important;
 		align-items: center !important;
@@ -109,7 +113,6 @@
 		border-radius: 6px !important;
 	}
 
-	/* Square variant used for undo/redo */
 	:global(.toolbar-button.square) {
 		width: 36px !important;
 		height: 36px !important;
@@ -131,8 +134,6 @@
 		height: 18px;
 	}
 
-	/* Theme-aware active tool styling */
-	/* Light theme: use dark background for active so it remains visible */
 	@media (prefers-color-scheme: light) {
 		:global(.toolbar-button.tool-active) {
 			background: #111 !important;
@@ -143,7 +144,6 @@
 		:global(.toolbar-button.tool-active) .toolbar-icon { color: #fff; }
 	}
 
-	/* Dark theme: keep white inverted button as before */
 	@media (prefers-color-scheme: dark) {
 		:global(.toolbar-button.tool-active) {
 			background: white !important;
