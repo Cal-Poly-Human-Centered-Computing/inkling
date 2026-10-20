@@ -8,6 +8,7 @@
 	import {faSpinner} from "@fortawesome/free-solid-svg-icons/faSpinner";
 	import {Canvas, FabricImage, IText, PencilBrush} from 'fabric';
 	import {installFabricNavigation} from '$lib/utils/fabricNavigation';
+	import {flipInk} from '$lib/utils/ink';
 
 	// Fabric.js canvas references
 	let fabricCanvas: any = null;
@@ -232,11 +233,23 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		}
 	}
 
-	// when the system theme flips, restyle the canvas and re-render the chart; only the background image is swapped,
-	// so existing strokes/text stay put. `appliedDark` is set first so this block can't re-trigger itself.
+	// invert near-black/near-white ("ink") strokes and text so they stay visible against the new background;
+	// other colors are left alone
+	function recolorInk() {
+		for (const obj of fabricCanvas.getObjects()) {
+			obj.set({ stroke: flipInk(obj.stroke), fill: flipInk(obj.fill) });
+		}
+		fabricCanvas.requestRenderAll();
+	}
+
+	// when the system theme flips, restyle the canvas and re-render the chart; the background image is swapped
+	// and ink-colored strokes/text are inverted, other markup stays put. `appliedDark` is set first so this block
+	// can't re-trigger itself.
 	$: if (fabricCanvas && appliedDark !== null && appliedDark !== $isDark) {
 		appliedDark = $isDark;
 		fabricCanvas.backgroundColor = $isDark ? DARK_BG : LIGHT_BG;
+		brushColor = flipInk(brushColor); // so new strokes use the new default; updateToolMode applies it to the brush
+		recolorInk();
 		updateToolMode();
 		doRenderSpec().catch(() => {});
 	}
@@ -246,7 +259,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 		fabricCanvas.backgroundImage = null;
 
-		const snap = JSON.stringify(fabricCanvas);
+		// record the theme the strokes were drawn under so restore() knows whether to recolor ink
+		const snap = JSON.stringify({ ...fabricCanvas.toJSON(), dark: $isDark });
 		// trim future redo history
 		currentHistoryStack = currentHistoryStack.slice(0, historyIndex + 1);
 		currentHistoryStack.push(snap);
@@ -280,6 +294,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 				}
 				// in case the user has switched between light and dark mode, keep the theme consistent
 				fabricCanvas.backgroundColor = $isDark ? DARK_BG : LIGHT_BG;
+				// ...and make sure ink drawn under the other theme stays visible
+				if (JSON.parse(snap).dark !== $isDark) recolorInk();
 
 				fabricCanvas.requestRenderAll()
 			});

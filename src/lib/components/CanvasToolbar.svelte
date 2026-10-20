@@ -4,11 +4,12 @@
 	import { createEventDispatcher } from 'svelte';
 	import {faMousePointer} from "@fortawesome/free-solid-svg-icons/faMousePointer";
 	import {faTrashCan} from "@fortawesome/free-solid-svg-icons/faTrashCan";
+  import { isDark } from '$lib/stores/theme';
 
 	const dispatch = createEventDispatcher();
 	export let selected: 'pen' | 'textbox' | 'selector' = 'pen';
 
-	export let brushColor: string = '#000000';
+	export let brushColor: string = $isDark ? '#ffffff' : '#000000';
 	export let brushWidth: number = 7;
 
 	export let enableDelete: boolean = false;
