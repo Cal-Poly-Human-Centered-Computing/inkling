@@ -546,7 +546,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		return !!baseSvg;
 	}
 
-	interface ExportBounds {
+	type ExportBounds = {
 		top: number, left: number, width: number, height: number
 	}
 
