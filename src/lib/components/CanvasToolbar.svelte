@@ -8,7 +8,7 @@
 	const dispatch = createEventDispatcher();
 	export let selected: 'pen' | 'textbox' | 'selector' = 'pen';
 	// brush controls (bindable from parent)
-	export let brushColor: string = '#ff0000';
+	export let brushColor: string = '#000000';
 	export let brushWidth: number = 7;
 
 	export let enableDelete: boolean = false;
