@@ -21,7 +21,6 @@
 
 </script>
 
-<!-- Container uses flex with center alignment so all buttons line up vertically -->
 <div style="display:flex; align-items:center; justify-content:end;">
 	<div>
 		<button class="button rollback-button toolbar-button" aria-label="Rollback" on:click={rollbackChanges} disabled="{!canRollback}">

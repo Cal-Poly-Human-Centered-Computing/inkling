@@ -254,7 +254,7 @@
       </header>
       <footer class="modal-card-foot" style="justify-content: end;">
         <button class="button" on:click={cancelRollback}>Cancel</button>&nbsp;
-        <button class="button is-info" on:click={handleConfirmRollback} >Yes</button>&nbsp;
+        <button class="button accent-button" on:click={handleConfirmRollback} >Yes</button>&nbsp;
       </footer>
     </div>
   </div>
