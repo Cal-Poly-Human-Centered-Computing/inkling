@@ -29,7 +29,7 @@
 
 	// Decorations added to indicate server-returned changes (cleared on next local edit)
 	let serverChangeDecorationIds: string[] = [];
-	type RemovedChunkInfo = { lineCount: number; text: string };
+	type RemovedChunkInfo = { anchorLine: number; lineCount: number; text: string };
 	let removedDecorationById = new Map<string, RemovedChunkInfo>();
 	let removedLinesOverlay:
 		| { anchorLine: number; lineCount: number; text: string }
@@ -63,6 +63,34 @@
 			return newlineCount + (value.endsWith('\n') ? 0 : 1);
 		};
 
+		// Creates one glyph above the removed content and one below,
+		// visually joined so it looks like one mark between the lines
+		const createRemovedGlyph = (info: RemovedChunkInfo): void => {
+			const hoverMessage = {
+				value: `${info.lineCount} ${info.lineCount === 1 ? 'line' : 'lines'} removed`
+			};
+
+			decos.push({
+				range: new monaco!.Range(info.anchorLine - 1, 1, info.anchorLine - 1, 1),
+				options: {
+					glyphMarginClassName: 'server-removed-glyph server-removed-glyph-bottom',
+					glyphMarginHoverMessage: hoverMessage,
+					hoverMessage
+				}
+			});
+			removedMetaByNewIndex.set(decos.length - 1, info);
+
+			decos.push({
+				range: new monaco!.Range(info.anchorLine, 1, info.anchorLine, 1),
+				options: {
+					glyphMarginClassName: 'server-removed-glyph server-removed-glyph-top',
+					glyphMarginHoverMessage: hoverMessage,
+					hoverMessage
+				}
+			});
+			removedMetaByNewIndex.set(decos.length - 1, info);
+		}
+
 		for (let i = 0; i < parts.length; i++) {
 			const part = parts[i];
 			const lineCount = getLineCount(part.value ?? '');
@@ -71,22 +99,13 @@
 				const modelLineCount = model.getLineCount();
 				if (lineCount > 0 && modelLineCount > 0) {
 					const anchorLine = Math.min(Math.max(newLine, 1), modelLineCount);
-					decos.push({
-						range: new monaco.Range(anchorLine, 1, anchorLine, 1),
-						options: {
-							glyphMarginClassName: 'server-removed-glyph',
-							glyphMarginHoverMessage: {
-								value: `${lineCount} ${lineCount === 1 ? 'line' : 'lines'} removed`
-							},
-							hoverMessage: {
-								value: `${lineCount} ${lineCount === 1 ? 'line' : 'lines'} removed`
-							}
-						}
-					});
-					removedMetaByNewIndex.set(decos.length - 1, {
+					const removedInfo: RemovedChunkInfo = {
+						anchorLine,
 						lineCount,
 						text: part.value ?? ''
-					});
+					};
+
+					createRemovedGlyph(removedInfo);
 				}
 				continue;
 			}
@@ -326,7 +345,11 @@
 			for (const decoration of lineDecorations) {
 				const removedInfo = removedDecorationById.get(decoration.id);
 				if (removedInfo) {
-					showRemovedLinesOverlay(lineNumber, removedInfo.lineCount, removedInfo.text);
+					showRemovedLinesOverlay(
+						removedInfo.anchorLine,
+						removedInfo.lineCount,
+						removedInfo.text
+					);
 					return;
 				}
 			}
@@ -535,10 +558,15 @@
 	  position: absolute;
 	  left: 2px;
 	  right: 2px;
+	  height: 4px;
+	  border-radius: 2px;
+	  background: var(--color-rollback-changes);
+  }
+  :global(.server-removed-glyph-top::before) {
 	  top: -1px;
-	  height: 5px;
-	  border-radius: 1px;
-	  background: gray;
+  }
+  :global(.server-removed-glyph-bottom::before) {
+	  bottom: -1px;
   }
   :global(.removed-lines-overlay) {
 	  position: absolute;
