@@ -693,6 +693,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		margin: 0;
 		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 		border-radius: var(--bulma-radius-medium);
+		overflow: hidden;
 	}
 
 	canvas {
@@ -723,7 +724,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		background: color-mix(in srgb, var(--color-float-bg) 80%, transparent);
 		pointer-events: all;
 		z-index: 1000;
-		margin: 20px;
 	}
 
 	.applying-status {
