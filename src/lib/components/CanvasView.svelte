@@ -538,6 +538,10 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		currentHistoryStack = restoredHistoryStack;
 	}
 
+	export function hasCanvasObjects(): boolean {
+		return !!fabricCanvas?.getObjects?.().length;
+	}
+
 	export function renderedVisPresent() {
 		return !!baseSvg;
 	}
@@ -655,7 +659,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	</div>
 
 	<!-- Fabric.js canvas (annotation surface). Vega embed will be added later underneath this layer. -->
-	<canvas bind:this={fabricCanvasEl} class:is-active={historyIndex >= 1}>
+	<canvas bind:this={fabricCanvasEl} class:is-active={hasCanvasObjects()}>
 	</canvas>
 
 	<!-- Applying overlay with spinner and status text -->

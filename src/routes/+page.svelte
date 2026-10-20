@@ -22,7 +22,7 @@
   }
 
   function canvasIsActive() {
-    return historyIndex >= 1;
+    return canvasViewRef?.hasCanvasObjects();
   }
 
   function handleUpload(e: CustomEvent) {
