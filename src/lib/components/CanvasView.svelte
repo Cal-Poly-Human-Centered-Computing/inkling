@@ -8,12 +8,14 @@
 	import Fa from 'svelte-fa';
 	import {faSpinner} from "@fortawesome/free-solid-svg-icons/faSpinner";
 	import {Canvas, FabricImage, IText, PencilBrush} from 'fabric';
+	import {installFabricNavigation} from '$lib/utils/fabricNavigation';
 
 	// Fabric.js canvas references
 	let fabricCanvas: any = null;
 	let fabricCanvasEl: HTMLCanvasElement | null = null;
 	let boxEl: HTMLDivElement | null = null;
 	let toolbarEl: HTMLDivElement | null = null;
+	let disposeFabricNavigation: (() => void) | null = null;
 
 	export let applying: boolean = false;
 
@@ -435,6 +437,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			backgroundColor: $isDark ? DARK_BG : LIGHT_BG,
 			preserveObjectStacking: true
 		});
+		disposeFabricNavigation = installFabricNavigation(fabricCanvas);
 		appliedDark = $isDark;
 
 		// ensure we have a proper pencil brush instance and initial settings
@@ -482,6 +485,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	onDestroy(() => {
 		// cleanup listeners and dispose fabric canvas
 		try {
+			disposeFabricNavigation?.();
+			disposeFabricNavigation = null;
 			window.removeEventListener('resize', resize);
 			window.removeEventListener('keydown', handleKeydown);
 			if (fabricCanvas) {
@@ -537,6 +542,48 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		return !!baseSvg;
 	}
 
+	interface ExportBounds {
+		top: number, left: number, width: number, height: number
+	}
+
+	function getExportBounds(): ExportBounds {
+		const exportPadding = 24;
+
+		const bounds = {
+			left: Number.POSITIVE_INFINITY,
+			top: Number.POSITIVE_INFINITY,
+			right: Number.NEGATIVE_INFINITY,
+			bottom: Number.NEGATIVE_INFINITY
+		};
+
+		const includeObjectBounds = (object: any) => {
+			if (!object || object.visible === false || typeof object.getBoundingRect !== 'function') return;
+			object.setCoords?.();
+			const objectBounds = object.getBoundingRect();
+			bounds.left = Math.min(bounds.left, objectBounds.left);
+			bounds.top = Math.min(bounds.top, objectBounds.top);
+			bounds.right = Math.max(bounds.right, objectBounds.left + objectBounds.width);
+			bounds.bottom = Math.max(bounds.bottom, objectBounds.top + objectBounds.height);
+		};
+
+		// The visualization is stored as Fabric's background image; it uses scene
+		// coordinates by default, so it remains part of the export regardless of
+		// the current viewport transform.
+		includeObjectBounds(fabricCanvas.backgroundImage);
+		fabricCanvas.getObjects().forEach(includeObjectBounds);
+
+		const left = Math.floor(bounds.left - exportPadding);
+		const top = Math.floor(bounds.top - exportPadding);
+		const right = Math.ceil(bounds.right + exportPadding);
+		const bottom = Math.ceil(bounds.bottom + exportPadding);
+		return {
+			left,
+			top,
+			width: Math.max(1, right - left),
+			height: Math.max(1, bottom - top)
+		};
+	}
+
 	/**
 	 * Export the current canvas (vega visualization + SVG overlays) to a base64 data URL.
 	 * Commits any active text editing before export so the SVG overlay contains the current text.
@@ -552,18 +599,41 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 
 		const format = (mime.split('/')[1] || 'png');
 		const multiplier = scale ?? (window.devicePixelRatio || 1);
+		const exportBounds: ExportBounds = getExportBounds();
 
 		// Ensure any active object selection is discarded so objects render in final state
 		try { fabricCanvas.discardActiveObject(); } catch (e) {}
 
 		// Render and export
 		try {
-			// ensure final render
-			fabricCanvas.requestRenderAll();
+			// Fabric's export helper preserves the current zoom when rendering.
+			// Normalize the viewport first so scene-space bounds are rendered at
+			// one-to-one scale regardless of the user's current navigation state.
+			const originalViewportTransform = [...fabricCanvas.viewportTransform];
+			fabricCanvas.setViewportTransform([
+				1,
+				0,
+				0,
+				1,
+				-exportBounds.left,
+				-exportBounds.top
+			]);
 
-			// Fabric's toDataURL will include backgroundImage/backgroundColor and all objects
-			const dataUrl = fabricCanvas.toDataURL({ format, multiplier, quality });
-			return dataUrl;
+			try {
+				fabricCanvas.requestRenderAll();
+				return fabricCanvas.toDataURL({
+					format,
+					multiplier,
+					quality,
+					left: 0,
+					top: 0,
+					width: exportBounds.width,
+					height: exportBounds.height
+				});
+			} finally {
+				fabricCanvas.setViewportTransform(originalViewportTransform);
+				fabricCanvas.requestRenderAll();
+			}
 		} catch (err) {
 			// Provide a helpful error when canvas is tainted due to cross-origin resources
 			const msg = String(err || 'unknown error');
