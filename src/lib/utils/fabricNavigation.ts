@@ -10,6 +10,7 @@ type FabricCanvas = Canvas;
 interface NavigationOptions {
 	minZoom?: number;
 	maxZoom?: number;
+	onZoomChange?: (zoom: number) => void;
 }
 
 export interface FabricNavigationController {
@@ -64,6 +65,7 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 	const canvasElement = canvas.upperCanvasEl;
 	const minZoom = options.minZoom ?? DEFAULT_MIN_ZOOM;
 	const maxZoom = options.maxZoom ?? DEFAULT_MAX_ZOOM;
+	const onZoomChange = options.onZoomChange;
 	let spacePressed = false;
 	let handMode = false;
 	let panStart: PointerPosition | null = null;
@@ -150,6 +152,7 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 			const zoom = Math.min(maxZoom, Math.max(minZoom,
 				canvas.getZoom() * Math.pow(WHEEL_ZOOM_SENSITIVITY, delta.y)));
 			canvas.zoomToPoint(pointer, zoom);
+			onZoomChange?.(zoom);
 			canvas.requestRenderAll();
 			return;
 		}
@@ -191,6 +194,7 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 	const zoomBy = (factor: number) => {
 		const zoom = Math.min(maxZoom, Math.max(minZoom, canvas.getZoom() * factor));
 		canvas.zoomToPoint(canvas.getCenterPoint(), zoom);
+		onZoomChange?.(zoom);
 		canvas.requestRenderAll();
 	};
 

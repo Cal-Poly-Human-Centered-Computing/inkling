@@ -24,6 +24,7 @@
 
 	// selected tool state
 	let selectedTool: 'pen' | 'textbox' | 'selector' | 'hand' = 'pen';
+	let zoomPercent = 100;
 
 	// canvas background per theme; dark matches the vega-themes 'dark' background so there's no seam around the chart
 	const LIGHT_BG = '#ffffff';
@@ -436,7 +437,11 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			backgroundColor: $isDark ? DARK_BG : LIGHT_BG,
 			preserveObjectStacking: true
 		});
-		fabricNavigation = installFabricNavigation(fabricCanvas);
+		fabricNavigation = installFabricNavigation(fabricCanvas, {
+			onZoomChange: (zoom) => {
+				zoomPercent = zoom * 100;
+			}
+		});
 		fabricNavigation?.setHandMode(selectedTool === 'hand');
 		appliedDark = $isDark;
 
@@ -658,7 +663,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	</div>
 
 	<div class="zoom-toolbar-container">
-		<ZoomToolbar on:zoom={handleZoom} />
+		<ZoomToolbar zoomPercent={zoomPercent} on:zoom={handleZoom} />
 	</div>
 
 	<!-- Fabric.js canvas with the rendered vis as the background -->
