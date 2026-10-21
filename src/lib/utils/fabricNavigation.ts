@@ -2,6 +2,7 @@ import { Canvas, Point } from 'fabric';
 
 const DEFAULT_MIN_ZOOM = 0.01;
 const DEFAULT_MAX_ZOOM = 20;
+const BUTTON_ZOOM_FACTOR = 1.2;
 const WHEEL_ZOOM_SENSITIVITY = .94;
 
 type FabricCanvas = Canvas;
@@ -13,6 +14,8 @@ interface NavigationOptions {
 
 export interface FabricNavigationController {
 	setHandMode(enabled: boolean): void;
+	zoomIn(): void;
+	zoomOut(): void;
 	dispose(): void;
 }
 
@@ -185,6 +188,11 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 		event.preventDefault();
 		cancelPan();
 	};
+	const zoomBy = (factor: number) => {
+		const zoom = Math.min(maxZoom, Math.max(minZoom, canvas.getZoom() * factor));
+		canvas.zoomToPoint(canvas.getCenterPoint(), zoom);
+		canvas.requestRenderAll();
+	};
 
 	canvasElement.addEventListener('pointerdown', beginPan, true);
 	canvasElement.addEventListener('pointermove', continuePan, true);
@@ -202,6 +210,12 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 		setHandMode(enabled: boolean) {
 			handMode = enabled;
 			if (!enabled && panStart) cancelPan();
+		},
+		zoomIn() {
+			zoomBy(BUTTON_ZOOM_FACTOR);
+		},
+		zoomOut() {
+			zoomBy(1 / BUTTON_ZOOM_FACTOR);
 		},
 		dispose() {
 			cancelPan();

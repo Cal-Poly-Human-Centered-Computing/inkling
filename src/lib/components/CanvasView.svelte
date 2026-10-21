@@ -3,7 +3,7 @@
 	import { code } from "$lib/stores/code";
 	import { isDark } from "$lib/stores/theme";
 	import { plotTheme } from "$lib/utils/vegaTheme";
-	import {CanvasToolbar} from "$lib/components/index";
+	import {CanvasToolbar, ZoomToolbar} from "$lib/components/index";
 	import Fa from 'svelte-fa';
 	import {faSpinner} from "@fortawesome/free-solid-svg-icons/faSpinner";
 	import {Canvas, FabricImage, IText, PencilBrush} from 'fabric';
@@ -52,6 +52,14 @@
 		selectedTool = e.detail;
 		updateToolMode();
 		fabricNavigation?.setHandMode(selectedTool === 'hand');
+	}
+
+	function handleZoom(e: CustomEvent<'in' | 'out'>) {
+		if (e.detail === 'in') {
+			fabricNavigation?.zoomIn();
+		} else {
+			fabricNavigation?.zoomOut();
+		}
 	}
 
 	function deleteSelectedObject() {
@@ -649,6 +657,10 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 					   disableRedo={currentHistoryStack.length <= historyIndex + 1} />
 	</div>
 
+	<div class="zoom-toolbar-container">
+		<ZoomToolbar on:zoom={handleZoom} />
+	</div>
+
 	<!-- Fabric.js canvas with the rendered vis as the background -->
 	<canvas bind:this={fabricCanvasEl} class:is-active={hasCanvasObjects()}>
 	</canvas>
@@ -684,6 +696,14 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 		border-radius: var(--bulma-radius-medium);
 		overflow: hidden;
+	}
+
+	.zoom-toolbar-container {
+		position: absolute;
+		right: 12px;
+		bottom: 12px;
+		z-index: 10000;
+		pointer-events: auto;
 	}
 
 	canvas {
