@@ -7,14 +7,14 @@
 	import Fa from 'svelte-fa';
 	import {faSpinner} from "@fortawesome/free-solid-svg-icons/faSpinner";
 	import {Canvas, FabricImage, IText, PencilBrush} from 'fabric';
-	import {installFabricNavigation} from '$lib/utils/fabricNavigation';
+	import {installFabricNavigation, type FabricNavigationController} from '$lib/utils/fabricNavigation';
 
 	// Fabric.js canvas references
 	let fabricCanvas: any = null;
 	let fabricCanvasEl: HTMLCanvasElement | null = null;
 	let boxEl: HTMLDivElement | null = null;
 	let toolbarEl: HTMLDivElement | null = null;
-	let disposeFabricNavigation: (() => void) | null = null;
+	let fabricNavigation: FabricNavigationController | null = null;
 
 	export let applying: boolean = false;
 
@@ -23,7 +23,7 @@
 	let brushWidth: number;
 
 	// selected tool state
-	let selectedTool: 'pen' | 'textbox' | 'selector' = 'pen';
+	let selectedTool: 'pen' | 'textbox' | 'selector' | 'hand' = 'pen';
 
 	// canvas background per theme; dark matches the vega-themes 'dark' background so there's no seam around the chart
 	const LIGHT_BG = '#ffffff';
@@ -51,6 +51,7 @@
 	function handleSelectTool(e: CustomEvent) {
 		selectedTool = e.detail;
 		updateToolMode();
+		fabricNavigation?.setHandMode(selectedTool === 'hand');
 	}
 
 	function deleteSelectedObject() {
@@ -90,6 +91,11 @@
 			fabricCanvas.selection = false;
 			fabricCanvas.getObjects().forEach((o: any) => (o.selectable = true));
 			try { fabricCanvas.defaultCursor = 'text'; } catch (err) {}
+		} else if (selectedTool === 'hand') {
+			fabricCanvas.isDrawingMode = false;
+			fabricCanvas.selection = false;
+			fabricCanvas.defaultCursor = 'grab';
+			fabricCanvas.getObjects().forEach((o: any) => (o.selectable = false));
 		}
 	}
 
@@ -422,7 +428,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			backgroundColor: $isDark ? DARK_BG : LIGHT_BG,
 			preserveObjectStacking: true
 		});
-		disposeFabricNavigation = installFabricNavigation(fabricCanvas);
+		fabricNavigation = installFabricNavigation(fabricCanvas);
+		fabricNavigation?.setHandMode(selectedTool === 'hand');
 		appliedDark = $isDark;
 
 		try {
@@ -468,8 +475,8 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	onDestroy(() => {
 		// cleanup listeners and dispose fabric canvas
 		try {
-			disposeFabricNavigation?.();
-			disposeFabricNavigation = null;
+			fabricNavigation?.dispose();
+			fabricNavigation = null;
 			window.removeEventListener('resize', resize);
 			window.removeEventListener('keydown', handleKeydown);
 			if (fabricCanvas) {

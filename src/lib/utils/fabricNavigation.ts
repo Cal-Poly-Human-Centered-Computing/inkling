@@ -11,6 +11,11 @@ interface NavigationOptions {
 	maxZoom?: number;
 }
 
+export interface FabricNavigationController {
+	setHandMode(enabled: boolean): void;
+	dispose(): void;
+}
+
 interface PointerPosition {
 	x: number;
 	y: number;
@@ -52,11 +57,12 @@ function normalizeWheelDelta(event: WheelEvent, canvasElement: HTMLElement): Poi
 	};
 }
 
-export function installFabricNavigation(canvas: FabricCanvas, options: NavigationOptions = {}): () => void {
+export function installFabricNavigation(canvas: FabricCanvas, options: NavigationOptions = {}): FabricNavigationController {
 	const canvasElement = canvas.upperCanvasEl;
 	const minZoom = options.minZoom ?? DEFAULT_MIN_ZOOM;
 	const maxZoom = options.maxZoom ?? DEFAULT_MAX_ZOOM;
 	let spacePressed = false;
+	let handMode = false;
 	let panStart: PointerPosition | null = null;
 	let selectionState: SelectionState | null = null;
 
@@ -78,9 +84,9 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 
 	const beginPan = (event: PointerEvent) => {
 		const isMiddleButton = event.button === 1;
-		const isSpacePan = event.button === 0 && spacePressed;
+		const isSpacePan = event.button === 0 && (spacePressed || handMode);
 		if (!isMiddleButton && !isSpacePan) return;
-		if (isSpacePan && (isEditableTarget(event.target) || isTextEditing(canvas))) return;
+		if (isSpacePan && !handMode && (isEditableTarget(event.target) || isTextEditing(canvas))) return;
 
 		event.preventDefault();
 		event.stopPropagation();
@@ -192,18 +198,24 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 	window.addEventListener('pointerup', endPan);
 	document.addEventListener('visibilitychange', cancelPan);
 
-	return () => {
-		cancelPan();
-		canvasElement.removeEventListener('pointerdown', beginPan, true);
-		canvasElement.removeEventListener('pointermove', continuePan, true);
-		canvasElement.removeEventListener('pointerup', endPan, true);
-		canvasElement.removeEventListener('pointercancel', endPan, true);
-		canvasElement.removeEventListener('wheel', handleWheel);
-		canvasElement.removeEventListener('contextmenu', handleContextMenu);
-		window.removeEventListener('keydown', handleKeyDown);
-		window.removeEventListener('keyup', handleKeyUp);
-		window.removeEventListener('blur', cancelPan);
-		window.removeEventListener('pointerup', endPan);
-		document.removeEventListener('visibilitychange', cancelPan);
+	return {
+		setHandMode(enabled: boolean) {
+			handMode = enabled;
+			if (!enabled && panStart) cancelPan();
+		},
+		dispose() {
+			cancelPan();
+			canvasElement.removeEventListener('pointerdown', beginPan, true);
+			canvasElement.removeEventListener('pointermove', continuePan, true);
+			canvasElement.removeEventListener('pointerup', endPan, true);
+			canvasElement.removeEventListener('pointercancel', endPan, true);
+			canvasElement.removeEventListener('wheel', handleWheel);
+			canvasElement.removeEventListener('contextmenu', handleContextMenu);
+			window.removeEventListener('keydown', handleKeyDown);
+			window.removeEventListener('keyup', handleKeyUp);
+			window.removeEventListener('blur', cancelPan);
+			window.removeEventListener('pointerup', endPan);
+			document.removeEventListener('visibilitychange', cancelPan);
+		}
 	};
 }

@@ -4,9 +4,10 @@
 	import { createEventDispatcher } from 'svelte';
 	import {faMousePointer} from "@fortawesome/free-solid-svg-icons/faMousePointer";
 	import {faTrashCan} from "@fortawesome/free-solid-svg-icons/faTrashCan";
+	import {faHand} from "@fortawesome/free-solid-svg-icons/faHand";
 
 	const dispatch = createEventDispatcher();
-	export let selected: 'pen' | 'textbox' | 'selector' = 'pen';
+	export let selected: 'pen' | 'textbox' | 'selector' | 'hand' = 'pen';
 
 	export let brushColor: string = '#000000';
 	export let brushWidth: number = 7;
@@ -15,7 +16,7 @@
 	export let disableUndo: boolean = true;
 	export let disableRedo: boolean = true;
 
-	function select(t: 'pen' | 'textbox' | 'selector') {
+	function select(t: 'pen' | 'textbox' | 'selector' | 'hand') {
 		selected = t;
 		dispatch('selectTool', t);
 	}
@@ -59,6 +60,11 @@
 	<!-- Main tool buttons -->
 	<div style="display:flex; align-items:center; gap:0.5rem;">
 		<div class="buttons" role="toolbar" aria-label="Drawing tools" style="display:flex; align-items:center; gap:0.5rem;">
+			<button class="button toolbar-button" on:click={() => select('hand')} aria-label="Hand tool" aria-pressed={selected === 'hand'} class:has-text-weight-bold={selected === 'hand'} class:tool-active={selected === 'hand'}>
+				<span class="icon toolbar-icon">
+					<Fa icon={faHand} />
+				</span>
+			</button>
 			<button class="button toolbar-button" on:click={() => select('selector')} aria-label="Selector tool" aria-pressed={selected === 'selector'} class:has-text-weight-bold={selected === 'selector'} class:tool-active={selected === 'selector'}>
 				<span class="icon toolbar-icon">
 					<Fa icon={faMousePointer} />
