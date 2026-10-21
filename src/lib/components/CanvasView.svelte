@@ -724,7 +724,6 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		margin: 0;
 		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 		border-radius: var(--bulma-radius-medium);
-		overflow: hidden;
 	}
 
 	.zoom-toolbar-container {
