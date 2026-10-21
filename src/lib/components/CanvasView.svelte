@@ -522,6 +522,14 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		currentHistoryStack = [];
 		historyIndex = -1
 		clearOverlays();
+		resetViewport();
+	}
+
+	function resetViewport() {
+		if (!fabricCanvas) return;
+		fabricCanvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+		zoomPercent = 100;
+		fabricCanvas.requestRenderAll();
 	}
 
 	export function rollbackChanges() {
