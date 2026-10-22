@@ -39,6 +39,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 	return element.tagName === 'INPUT' ||
 		element.tagName === 'TEXTAREA' ||
 		element.isContentEditable ||
+		element.closest('.monaco-editor') !== null ||
 		element.closest('input, textarea, [contenteditable="true"]') !== null;
 }
 
@@ -171,8 +172,7 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 	};
 
 	const handleKeyDown = (event: KeyboardEvent) => {
-		if (event.code !== 'Space' || isEditableTarget(event.target) ||
-			!(event.target instanceof Node && canvasElement.contains(event.target))) {
+		if (event.code !== 'Space' || isEditableTarget(event.target)) {
 			return;
 		}
 		event.preventDefault();
