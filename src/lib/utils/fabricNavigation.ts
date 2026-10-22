@@ -171,7 +171,10 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 	};
 
 	const handleKeyDown = (event: KeyboardEvent) => {
-		if (event.code !== 'Space' || isEditableTarget(event.target)) return;
+		if (event.code !== 'Space' || isEditableTarget(event.target) ||
+			!(event.target instanceof Node && canvasElement.contains(event.target))) {
+			return;
+		}
 		event.preventDefault();
 		spacePressed = true;
 	};
