@@ -10,9 +10,16 @@ export function getDataToken(): any {
   return dataset?.url ? { url: dataset.url } : null;
 }
 
+export type ColumnType = 'quantitative' | 'temporal' | 'nominal' | 'ordinal';
+// The types estimateType can infer from the values. Ordinal is dropped: whether a column's values have a
+// meaningful order (ratings, sizes, cylinder counts) isn't something the values reliably show, so only the user sets it.
+export type EstimatedColumnType = Exclude<ColumnType, 'ordinal'>;
+export type ColumnSchema = { name: string; type: ColumnType }[];
+
 export type PersistedDataset = {
   url?: string;
   columns?: string[];
+  schema?: ColumnSchema; // estimated once, when the dataset is stored
   data?: Record<string, any>[];
   timestamp?: number;
 };
@@ -44,21 +51,23 @@ export function getColumnNames(): string[] {
     }
 }
 
-export type ColumnType = 'quantitative' | 'temporal' | 'nominal';
-
 // An ISO date followed by a space and a time; the space is swapped for the "T" autoType expects
 const SPACE_DATETIME = /^(\d{4}-\d{2}-\d{2}) (?=\d{2}:\d{2})/;
 
 /**
   A column gets a type only if every non-empty value parses as that type under d3's autoType (CSV rows have
-  already been through it; JSON rows haven't); anything mixed is nominal. Empty values (null, '', and NaN, which
-  is null after a round trip through localStorage) are skipped.
+  already been through it, so their dates are Date objects; JSON rows haven't); anything mixed is nominal.
+  Empty values (null, undefined, '') are skipped; NaN counts as a number.
   One addition to autoType: space-separated datetimes ("2015-03-07 12:32:17") count as dates, as they do in Vega.
 */
-export function estimateType(values: any[]): ColumnType {
-  const types = new Set<ColumnType>();
+export function estimateType(values: any[]): EstimatedColumnType {
+  const types = new Set<EstimatedColumnType>();
   for (const value of values) {
     if (value === null || value === undefined) continue;
+    if (value instanceof Date) {
+      types.add('temporal');
+      continue;
+    }
     const text = String(value).trim().replace(SPACE_DATETIME, '$1T');
     const parsed = autoType<{ v: string | number | boolean | Date | null }, 'v'>({ v: text }).v;
     if (parsed === null) continue; // empty or whitespace-only
@@ -67,19 +76,21 @@ export function estimateType(values: any[]): ColumnType {
   return types.size === 1 ? [...types][0] : 'nominal';
 }
 
-/**
- * Column names with estimated Vega-Lite types. This is the only information about the dataset that gets
- * sent to the server/LLM; the rows themselves stay on the client.
- */
-export function getColumnSchema(): { name: string; type: ColumnType }[] {
-  const payload = readRaw();
-  const columns = payload?.columns ?? [];
-  const data = payload?.data ?? [];
-
+function estimateSchema(columns: string[], data: Record<string, any>[]): ColumnSchema {
   return columns.map(name => ({
     name,
     type: estimateType(data.map(row => row?.[name]))
   }));
+}
+
+/**
+ * Column names with estimated Vega-Lite types. This is the only information about the dataset that gets
+ * sent to the server/LLM; the rows themselves stay on the client.
+ */
+export function getColumnSchema(): ColumnSchema {
+  const payload = readRaw();
+  // datasets stored before the schema was saved alongside them are estimated here instead
+  return payload?.schema ?? estimateSchema(payload?.columns ?? [], payload?.data ?? []);
 }
 
 function writeRaw(payload: PersistedDataset | null) {
@@ -97,7 +108,7 @@ function writeRaw(payload: PersistedDataset | null) {
 
 /**
  * Persist a dataset (array of row objects) to localStorage, along with its
- * column names and optional source URL.
+ * column names, their estimated types, and optional source URL.
  *
  * Note: localStorage has size limits (~5MB). For larger datasets consider using
  * IndexedDB or not persisting the full dataset.
@@ -109,6 +120,7 @@ export function setDataset(data: Record<string, any>[], columns: string[], url?:
   const payload: PersistedDataset = {
     url: url ?? undefined,
     columns: columns?.length ? columns : undefined,
+    schema: columns?.length ? estimateSchema(columns, data ?? []) : undefined,
     data: data?.length ? data : undefined,
     timestamp: Date.now(),
   };

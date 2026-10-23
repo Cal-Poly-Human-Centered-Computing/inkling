@@ -18,9 +18,13 @@ export function extractColumns(obj: any): string[] {
     // csvParse output includes a `columns` array
     if (obj && Array.isArray((obj as any).columns)) return (obj as any).columns;
 
-    // array of objects -> keys of first object
+    // array of objects -> every key that appears in any row, in order of first appearance
     if (Array.isArray(obj) && obj.length > 0 && typeof obj[0] === 'object' && !Array.isArray(obj[0])) {
-      return Object.keys(obj[0]);
+      const keys = new Set<string>();
+      for (const row of obj) {
+        for (const key of Object.keys(row ?? {})) keys.add(key);
+      }
+      return [...keys];
     }
   } catch (err) {
     // ignore and fallthrough
@@ -32,7 +36,7 @@ export function extractColumns(obj: any): string[] {
  * Load JSON or CSV from a URL into an array of objects and a list of column names.
  * Behavior:
  *  - determine resource type by URL extension and Content-Type header
- *  - on failure, fall back to fetch(url).json() or fetch(url).text() then parse as CSV
+ *  - if neither identifies the type, try parsing as JSON, then as CSV
  *  - for CSVs, use d3.autoType
  * 
  * @param url Passed directly to `fetch`
@@ -57,16 +61,19 @@ export async function loadDatasetFromUrl(url: string): Promise<LoadedDataset> {
 
   let data;
   try {
+    // the body can only be read once, so read it as text and parse from that
+    const text = await res.text();
     if (type === 'csv') {
-      data = csvParse(await res.text(), autoType);
+      data = csvParse(text, autoType);
     } else if (type === 'json') {
-      data = await res.json();
+      data = JSON.parse(text);
     } else {
+      // Neither the extension nor the contentType told us the data format
       try {
-        data = await res.json();
+        data = JSON.parse(text);
       } catch (err) {
         // try CSV
-        data = csvParse(await res.text(), autoType);
+        data = csvParse(text, autoType);
       }
     }
   } catch (err) {

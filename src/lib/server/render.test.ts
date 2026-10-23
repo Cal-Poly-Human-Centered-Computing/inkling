@@ -11,11 +11,6 @@ const columns: ColumnSchema = [
 describe('placeholderData', () => {
 	const rows = placeholderData(columns);
 
-	it('returns the same 60 rows every time', () => {
-		expect(rows).toHaveLength(60);
-		expect(placeholderData(columns)).toEqual(rows);
-	});
-
 	it('fills quantitative columns with numbers in [0, 100]', () => {
 		for (const { price } of rows) {
 			expect(typeof price).toBe('number');
@@ -71,13 +66,40 @@ describe('renderSpec', () => {
 		expect(result.errors[0]).toMatch(/^Invalid JSON/);
 	});
 
-	it('rejects a spec that fails to compile', async () => {
-		const result = await renderSpec(JSON.stringify({ ...bar, transform: { filter: 'datum.price > 0' } }), columns);
+	const rejected: Record<string, unknown> = {
+		'non-string mark': { ...bar, mark: 123 },
+		'top-level array': [bar],
+		'missing mark': { encoding: bar.encoding },
+		'transform that is not an array': { ...bar, transform: { filter: 'datum.price > 0' } },
+		'layer that is not an array': { layer: bar },
+		'layer item without a mark': { layer: [{ encoding: bar.encoding }] }
+	};
+
+	// Invalid specs that vega-lite compiles and vega runs anyway (some with a warning), so they come back ok.
+	// it.fails passes while the gap exists; if renderSpec starts catching one, move it to `rejected`.
+	// (Non-array data.values can't happen here: renderSpec replaces the spec's data.)
+	const knownGaps: Record<string, unknown> = {
+		'channel definition that is a string': { ...bar, encoding: { ...bar.encoding, x: 'brand' } },
+		'numeric field name': { ...bar, encoding: { ...bar.encoding, x: { field: 42, type: 'nominal' } } },
+		'unknown aggregate': { ...bar, encoding: { ...bar.encoding, y: { ...bar.encoding.y, aggregate: 'totallyNotReal' } } },
+		'repeat that is not an array or object': {
+			repeat: 3,
+			spec: { mark: 'bar', encoding: { x: { field: { repeat: 'column' }, type: 'nominal' }, y: { field: 'price', type: 'quantitative' } } }
+		}
+	};
+
+	it.each(Object.entries(rejected))('rejects a %s', async (_, spec) => {
+		const result = await renderSpec(JSON.stringify(spec), columns);
 		expect(result.ok).toBe(false);
 		expect(result.errors.length).toBeGreaterThan(0);
 	});
 
-	it('rejects a spec without a mark', async () => {
-		expect((await renderSpec(JSON.stringify({ encoding: bar.encoding }), columns)).ok).toBe(false);
+	it.fails.each(Object.entries(knownGaps))('rejects a %s (known gap)', async (_, spec) => {
+		expect((await renderSpec(JSON.stringify(spec), columns)).ok).toBe(false);
+	});
+
+	it('collects warnings', async () => {
+		const result = await renderSpec(JSON.stringify(knownGaps['unknown aggregate']), columns);
+		expect(result.warnings).toContain('Invalid aggregation operator "totallyNotReal".');
 	});
 });

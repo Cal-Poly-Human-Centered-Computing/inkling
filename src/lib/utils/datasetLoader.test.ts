@@ -7,8 +7,8 @@ describe('extractColumns', () => {
 		expect(extractColumns(csvParse('a,b\n1,2'))).toEqual(['a', 'b']);
 	});
 
-	it('uses the keys of the first row of an array of objects', () => {
-		expect(extractColumns([{ x: 1, y: 2 }, { z: 3 }])).toEqual(['x', 'y']);
+	it('uses every key that appears in an array of objects, in order of first appearance', () => {
+		expect(extractColumns([{ x: 1, y: 2 }, { z: 3, x: 4 }, { y: 5 }])).toEqual(['x', 'y', 'z']);
 	});
 
 	it.each([

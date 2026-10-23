@@ -84,10 +84,23 @@ describe('getColumnSchema', () => {
 		]);
 	});
 
-	it('treats CSV dates as temporal after they are stored', () => {
-		// csvParse with autoType produces Date objects, which localStorage turns into ISO strings
+	it('treats CSV dates as temporal', () => {
+		// csvParse with autoType produces Date objects
 		setDataset([{ date: new Date(2020, 0, 15) }, { date: new Date(2020, 1, 15) }], ['date']);
 		expect(getColumnSchema()).toEqual([{ name: 'date', type: 'temporal' }]);
+	});
+
+	it('estimates types when the dataset is stored, not when they are read', () => {
+		setDataset([{ n: 1 }, { n: 2 }], ['n']);
+		// change the stored rows behind the store's back; the saved schema should not change
+		const stored = readPersistedDataset()!;
+		localStorage.setItem('app:dataset', JSON.stringify({ ...stored, data: [{ n: 'n/a' }] }));
+		expect(getColumnSchema()).toEqual([{ name: 'n', type: 'quantitative' }]);
+	});
+
+	it('estimates types for datasets stored without a schema', () => {
+		localStorage.setItem('app:dataset', JSON.stringify({ columns: ['n'], data: [{ n: 1 }, { n: 2 }] }));
+		expect(getColumnSchema()).toEqual([{ name: 'n', type: 'quantitative' }]);
 	});
 
 	it('checks every row, not just the first few hundred', () => {
@@ -105,6 +118,7 @@ describe('estimateType', () => {
 		['NaN in a numeric column', [1, NaN, 2], 'quantitative'],
 		['"NaN" in a numeric string column', ['1', 'NaN'], 'quantitative'],
 		['years are numbers, not dates', [2019, '2020'], 'quantitative'],
+		['Date objects', [new Date(2020, 0, 15), null], 'temporal'],
 		['ISO dates', ['2020-01-15', '2021-06-01', '2022-12-31'], 'temporal'],
 		['ISO datetimes', ['2020-01-15T00:00:00', '2020-02-15T08:00:00.000Z'], 'temporal'],
 		['space-separated datetimes', ['2015-03-07 12:32:17', '2015-03-08 09:05'], 'temporal'],

@@ -25,6 +25,6 @@ export type ReviewVerdict = z.infer<typeof ReviewVerdict>;
 // Column metadata sent by the client; types are estimated client-side, no data rows are sent
 export const ColumnSchema = z.array(z.object({
   name: z.string(),
-  type: z.enum(["quantitative", "temporal", "nominal"])
+  type: z.enum(["quantitative", "temporal", "nominal", "ordinal"])
 }));
 export type ColumnSchema = z.infer<typeof ColumnSchema>;
