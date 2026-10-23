@@ -760,6 +760,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		justify-content: center;
 		background: color-mix(in srgb, var(--color-float-bg) 80%, transparent);
 		pointer-events: all;
+		border-radius: var(--bulma-radius-medium);
 		z-index: 1000;
 	}
 
