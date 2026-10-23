@@ -10,7 +10,11 @@ function parseHex(color: unknown): [number, number, number] | null {
 	return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
 }
 
-// near-black or near-white with little tint; mid-grays and colors are not "ink"
+/**
+ * Near-black or near-white are considered "ink" that should be
+ * inverted when the theme changes.
+ * Mid-grays and colors are not.
+ */
 export function isInkColor(color: unknown): boolean {
 	const rgb = parseHex(color);
 	if (!rgb) return false;

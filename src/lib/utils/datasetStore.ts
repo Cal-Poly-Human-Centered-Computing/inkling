@@ -1,5 +1,7 @@
 // Helpers for persisting datasets (arrays of row objects) to localStorage and reading them back.
 
+import { autoType } from 'd3-dsv';
+
 export function getDataToken(): any {
   const dataset = readRaw()
   if (!dataset) return null;
@@ -44,30 +46,25 @@ export function getColumnNames(): string[] {
 
 export type ColumnType = 'quantitative' | 'temporal' | 'nominal';
 
-// A column gets a type if at least this share of its sampled non-empty values look like that type
-const TYPE_THRESHOLD = 0.9;
-const SAMPLE_SIZE = 500;
+// An ISO date followed by a space and a time; the space is swapped for the "T" autoType expects
+const SPACE_DATETIME = /^(\d{4}-\d{2}-\d{2}) (?=\d{2}:\d{2})/;
 
-function looksTemporal(value: any): boolean {
-  if (typeof value !== 'string') return false;
-  // Require a date-like separator so strings like "42" or "Ford" aren't treated as dates
-  return /\d{1,4}[-/]\d{1,2}/.test(value) && !Number.isNaN(Date.parse(value));
-}
-
-function estimateType(values: any[]): ColumnType {
-  const present = values.filter(v => v !== null && v !== undefined && v !== '');
-  if (present.length === 0) return 'nominal';
-
-  const share = (test: (v: any) => boolean) => present.filter(test).length / present.length;
-
-  // Rows from CSVs are parsed with d3's autoType, so numbers are already numbers; JSON datasets may have numeric strings
-  if (share(v => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)))) >= TYPE_THRESHOLD) {
-    return 'quantitative';
+/**
+  A column gets a type only if every non-empty value parses as that type under d3's autoType (CSV rows have
+  already been through it; JSON rows haven't); anything mixed is nominal. Empty values (null, '', and NaN, which
+  is null after a round trip through localStorage) are skipped.
+  One addition to autoType: space-separated datetimes ("2015-03-07 12:32:17") count as dates, as they do in Vega.
+*/
+export function estimateType(values: any[]): ColumnType {
+  const types = new Set<ColumnType>();
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    const text = String(value).trim().replace(SPACE_DATETIME, '$1T');
+    const parsed = autoType<{ v: string | number | boolean | Date | null }, 'v'>({ v: text }).v;
+    if (parsed === null) continue; // empty or whitespace-only
+    types.add(typeof parsed === 'number' ? 'quantitative' : parsed instanceof Date ? 'temporal' : 'nominal');
   }
-  if (share(looksTemporal) >= TYPE_THRESHOLD) {
-    return 'temporal';
-  }
-  return 'nominal';
+  return types.size === 1 ? [...types][0] : 'nominal';
 }
 
 /**
@@ -77,11 +74,11 @@ function estimateType(values: any[]): ColumnType {
 export function getColumnSchema(): { name: string; type: ColumnType }[] {
   const payload = readRaw();
   const columns = payload?.columns ?? [];
-  const sample = (payload?.data ?? []).slice(0, SAMPLE_SIZE);
+  const data = payload?.data ?? [];
 
   return columns.map(name => ({
     name,
-    type: estimateType(sample.map(row => row?.[name]))
+    type: estimateType(data.map(row => row?.[name]))
   }));
 }
 

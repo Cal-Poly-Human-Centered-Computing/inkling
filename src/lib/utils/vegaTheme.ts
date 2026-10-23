@@ -7,8 +7,7 @@ const CHART_TITLE_FONT_SIZE = 12;
 const TITLE_FONT_WEIGHT = "normal";
 
 /**
- * Embed-time Vega-Lite config to control Vega-Lite's default look (inspired by Observable Plot's defaults):
- * no frame, light horizontal gridlines only and x-axis line only, a smaller system-ui font, and open points.
+ * Embed-time Vega-Lite config to control Vega-Lite's default look.
  *
  * In dark mode this also carries the colors of vega-themes' 'dark' theme. We don't pass `theme: 'dark'` alongside it
  * because vega-embed's config merge replaces nested objects (e.g. `axis`) instead of merging them, so the theme's
@@ -31,8 +30,6 @@ export function plotTheme(dark: boolean): Config {
       titlePadding: 10,
 			...(dark ? { domainColor: fg, tickColor: fg } : {})
 		},
-    axisX: { grid: false, gridColor: fg, gridOpacity: 0.2, domainWidth: 1.5, domainColor: fg },
-		axisY: { grid: true, gridColor: fg, gridOpacity: 0.2, domain: false, domainColor: fg },
     legend: { labelFontSize: LABEL_FONT_SIZE, titleFontSize: TITLE_FONT_SIZE, titleFontWeight: TITLE_FONT_WEIGHT },
 		title: {
 			fontSize: CHART_TITLE_FONT_SIZE,
