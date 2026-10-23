@@ -428,7 +428,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 					return;
 				}
 			}
-			const pointer = opt.viewportPoint;
+			const pointer = fabricCanvas.getScenePoint(opt.e);
 			if (!pointer) return;
 			createTextboxAt(pointer.x, pointer.y);
 		} catch (err) {
