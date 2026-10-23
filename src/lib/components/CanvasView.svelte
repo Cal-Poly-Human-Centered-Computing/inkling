@@ -16,6 +16,7 @@
 	let boxEl: HTMLDivElement | null = null;
 	let toolbarEl: HTMLDivElement | null = null;
 	let fabricNavigation: FabricNavigationController | null = null;
+	let colorPickerOpen = false;
 
 	export let applying: boolean = false;
 
@@ -62,6 +63,18 @@
 		} else {
 			fabricNavigation?.zoomOut();
 		}
+	}
+
+	function handleColorPickerOpen() {
+		colorPickerOpen = true;
+	}
+
+	function consumeColorPickerDismissal(event: PointerEvent) {
+		if (!colorPickerOpen) return;
+		colorPickerOpen = false;
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		(document.activeElement as HTMLElement | null)?.blur();
 	}
 
 	function deleteSelectedObject() {
@@ -460,6 +473,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		});
 		fabricNavigation?.setHandMode(selectedTool === 'hand');
 		appliedDark = $isDark;
+		fabricCanvas.upperCanvasEl.addEventListener('pointerdown', consumeColorPickerDismissal, true);
 
 		try {
 			// Some Fabric builds create a default freeDrawingBrush; create explicit PencilBrush
@@ -509,6 +523,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 			window.removeEventListener('resize', resize);
 			window.removeEventListener('keydown', handleKeydown);
 			if (fabricCanvas) {
+				fabricCanvas.upperCanvasEl?.removeEventListener('pointerdown', consumeColorPickerDismissal, true);
 				fabricCanvas.off && fabricCanvas.off('path:created');
 				fabricCanvas.off && fabricCanvas.off('mouse:down');
 				fabricCanvas.off && fabricCanvas.off('object:modified');
@@ -681,6 +696,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 	<div bind:this={toolbarEl} style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 10px 10px 0 10px; z-index:10000;">
 		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete={objectSelected}
 					   on:selectTool={handleSelectTool} on:delete={deleteSelectedObject}
+					   on:colorPickerOpen={handleColorPickerOpen}
 					   on:undo={undo} on:redo={redo}
 					   disableUndo={historyIndex == 0}
 					   disableRedo={currentHistoryStack.length <= historyIndex + 1} />
