@@ -10,7 +10,6 @@ const MAX_COMPILE_RETRIES = 2;
 export type PipelineInput = {
   image: string | null;
   columns: ColumnSchema;
-  columnNames: string[]; // still sent by the client; the new prompts use `columns`
   currentSpec?: string | null;
   chatMessage?: string | null;
 };

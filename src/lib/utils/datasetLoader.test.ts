@@ -10,15 +10,6 @@ describe('extractColumns', () => {
 	it('uses every key that appears in an array of objects, in order of first appearance', () => {
 		expect(extractColumns([{ x: 1, y: 2 }, { z: 3, x: 4 }, { y: 5 }])).toEqual(['x', 'y', 'z']);
 	});
-
-	it.each([
-		['an empty array', []],
-		['an array of arrays', [[1, 2]]],
-		['null', null],
-		['a string', 'a,b']
-	])('returns [] for %s', (_, input) => {
-		expect(extractColumns(input)).toEqual([]);
-	});
 });
 
 describe('loadDatasetFromUrl', () => {

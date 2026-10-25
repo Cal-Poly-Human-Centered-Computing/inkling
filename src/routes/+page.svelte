@@ -3,7 +3,7 @@
   import { code as codeStore } from '$lib/stores/code';
   import {get} from "svelte/store";
   import { observations as observationsStore } from '$lib/stores/observations';
-  import {getColumnNames, getColumnSchema} from "$lib/utils/datasetStore";
+  import {getColumnSchema} from "$lib/utils/datasetStore";
   import DatasetToolbar from "$lib/components/DatasetToolbar.svelte";
 
   let uploadedFile: File | null = null;
@@ -104,7 +104,6 @@
         image: dataUrl,
         chatMessage,
         currentSpec: get(codeStore),
-        columnNames: getColumnNames(),
         columns: getColumnSchema(),
         renderedVis: canvasViewRef.renderedVisPresent()
       };

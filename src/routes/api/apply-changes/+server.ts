@@ -17,7 +17,6 @@ export const POST: RequestHandler = async ({ request }) => {
     const chatMessage: string | null = body.chatMessage?.trim() || null;
     const currentSpec: string = body.currentSpec ?? '';
     const columns = body.columns ?? [];
-    const columnNames: string[] = body.columnNames ?? [];
     const renderedVis = Boolean(body.renderedVis);
 
     // Shouldn't happen through the web client, since the Apply Changes button is disabled in this case
@@ -26,7 +25,7 @@ export const POST: RequestHandler = async ({ request }) => {
     }
 
     const pipeline = renderedVis ? refine : fromScratch;
-    const { spec, observations, errors } = await pipeline({image, chatMessage, currentSpec, columns, columnNames});
+    const { spec, observations, errors } = await pipeline({image, chatMessage, currentSpec, columns});
     return json({ ok: true, result: spec, observations, errors });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

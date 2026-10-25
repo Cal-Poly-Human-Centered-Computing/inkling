@@ -58,6 +58,8 @@ function collectingLogger(warnings: string[], errors: string[]) {
  * Compiles and runs a spec against placeholder data, returning compile/runtime errors.
  * Running the view catches some problems that compiling alone misses. Fields that don't exist are not caught:
  * Vega only warns about them, and checking them ourselves would mean hardcoding Vega-Lite's transform semantics.
+ * Vega-Lite is also lenient about some malformed specs, which come back ok (at most with a warning): a channel given
+ * as a plain string (`x: "a"`), a numeric `field`, an unknown `aggregate`, and a non-array `repeat`.
  */
 export async function renderSpec(specString: string, columns: ColumnSchema): Promise<RenderResult> {
   const warnings: string[] = [];

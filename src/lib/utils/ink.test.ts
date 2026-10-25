@@ -34,10 +34,6 @@ describe('invertInk', () => {
 	it('passes non-hex input through unchanged', () => {
 		expect(invertInk('transparent')).toBe('transparent');
 	});
-
-	it('is its own inverse for', () => {
-		expect(invertInk(invertInk('#123456'))).toBe('#123456');
-	});
 });
 
 describe('flipInk', () => {

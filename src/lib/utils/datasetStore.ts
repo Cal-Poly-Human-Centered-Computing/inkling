@@ -16,39 +16,36 @@ export type ColumnType = 'quantitative' | 'temporal' | 'nominal' | 'ordinal';
 export type EstimatedColumnType = Exclude<ColumnType, 'ordinal'>;
 export type ColumnSchema = { name: string; type: ColumnType }[];
 
+// Metadata about the dataset; small, so it's cheap to read on every request
 export type PersistedDataset = {
   url?: string;
   columns?: string[];
   schema?: ColumnSchema; // estimated once, when the dataset is stored
-  data?: Record<string, any>[];
   timestamp?: number;
 };
 
+// Metadata and rows are stored under separate keys so reading the metadata never parses the rows
 const STORAGE_KEY = 'app:dataset';
+const ROWS_KEY = 'app:dataset:rows';
 
 function isBrowser() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
-function readRaw(): PersistedDataset | null {
+function readJson<T>(key: string): T | null {
   if (!isBrowser()) return null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
-    return JSON.parse(raw) as PersistedDataset;
+    return JSON.parse(raw) as T;
   } catch (err) {
     console.warn('datasetStore: failed to read from localStorage', err);
     return null;
   }
 }
 
-export function getColumnNames(): string[] {
-    const payload = readRaw();
-    if (payload && payload.columns) {
-        return payload.columns;
-    } else {
-      return []
-    }
+function readRaw(): PersistedDataset | null {
+  return readJson<PersistedDataset>(STORAGE_KEY);
 }
 
 // An ISO date followed by a space and a time; the space is swapped for the "T" autoType expects
@@ -89,82 +86,76 @@ function estimateSchema(columns: string[], data: Record<string, any>[]): ColumnS
  */
 export function getColumnSchema(): ColumnSchema {
   const payload = readRaw();
-  // datasets stored before the schema was saved alongside them are estimated here instead
-  return payload?.schema ?? estimateSchema(payload?.columns ?? [], payload?.data ?? []);
+  if (!payload) return [];
+  if (payload.schema) return payload.schema;
+
+  // Datasets stored in the old format kept their rows in the metadata and had no schema. Estimate the schema once
+  // and save it, dropping the rows: they were only ever URL datasets, whose rows aren't kept.
+  const { data, ...metadata } = payload as PersistedDataset & { data?: Record<string, any>[] };
+  if (!data?.length || !metadata.columns?.length) return [];
+  const schema = estimateSchema(metadata.columns, data);
+  writeJson(STORAGE_KEY, { ...metadata, schema });
+  return schema;
 }
 
-function writeRaw(payload: PersistedDataset | null) {
-  if (!isBrowser()) return;
+// Stores the value under the key, or removes the key when the value is null. Returns false if the write failed
+// (e.g. the dataset is over localStorage's ~5MB quota).
+function writeJson(key: string, value: unknown): boolean {
+  if (!isBrowser()) return false;
   try {
-    if (payload === null) {
-      localStorage.removeItem(STORAGE_KEY);
+    if (value === null) {
+      localStorage.removeItem(key);
     } else {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      localStorage.setItem(key, JSON.stringify(value));
     }
+    return true;
   } catch (err) {
     console.warn('datasetStore: failed to write to localStorage', err);
+    return false;
   }
 }
 
 /**
- * Persist a dataset (array of row objects) to localStorage, along with its
- * column names, their estimated types, and optional source URL.
+ * Persist a dataset's column names and estimated types to localStorage, plus either its source URL or its rows.
+ * Rows of a URL dataset are only used to estimate types and aren't kept: the chart loads them from the URL.
+ * Returns false if nothing was stored; the previously stored dataset is then left as it was.
  *
- * Note: localStorage has size limits (~5MB). For larger datasets consider using
- * IndexedDB or not persisting the full dataset.
+ * Note: localStorage has size limits (~5MB). For larger datasets consider using IndexedDB.
  */
-export function setDataset(data: Record<string, any>[], columns: string[], url?: string) {
-  if (!isBrowser()) return;
-  if (!data?.length && !url) return;
+export function setDataset(data: Record<string, any>[], columns: string[], url?: string): boolean {
+  if (!isBrowser()) return false;
+  if (!data?.length && !url) return false;
 
   const payload: PersistedDataset = {
     url: url ?? undefined,
     columns: columns?.length ? columns : undefined,
     schema: columns?.length ? estimateSchema(columns, data ?? []) : undefined,
-    data: data?.length ? data : undefined,
     timestamp: Date.now(),
   };
 
-  writeRaw(payload);
-}
-
-/**
- * Persist only a URL reference for the dataset (lightweight)
- */
-export function setDatasetUrl(url: string) {
-  if (!isBrowser()) return;
-  const payload: PersistedDataset = { url, timestamp: Date.now() };
-  writeRaw(payload);
+  // rows first, so a failed (too large) write doesn't leave new metadata alongside the old dataset's rows
+  if (!writeJson(ROWS_KEY, url ? null : data)) return false;
+  return writeJson(STORAGE_KEY, payload);
 }
 
 /**
  * Clear any persisted dataset from localStorage
  */
 export function clearDatasetStore() {
-  writeRaw(null);
+  writeJson(STORAGE_KEY, null);
+  writeJson(ROWS_KEY, null);
 }
-
-export function getFirstRow(): Record<string, any> | null {
-  const payload = readRaw();
-  if (!payload || !payload.data) return null;
-
-  const { data, columns } = payload;
-  if (!Array.isArray(data) || data.length === 0 || !columns || !columns.length) return null;
-
-  const first = data[0];
-  if (typeof first !== 'object' || first === null) return null;
-
-  // preserve column order
-  const obj: Record<string, any> = {};
-  for (const col of columns) {
-    obj[col] = (first as Record<string, any>)[col];
-  }
-  return obj;
-}
-
 
 /**
- * Read the raw persisted payload (no reconstruction). Useful for quick inspection or partial restores.
+ * The stored rows of a dataset without a URL (e.g. an uploaded file), or null. Parses the whole dataset, so only
+ * call this where the rows are actually needed.
+ */
+export function getRows(): Record<string, any>[] | null {
+  return readJson<Record<string, any>[]>(ROWS_KEY);
+}
+
+/**
+ * Read the persisted metadata (no rows). Useful for quick inspection or partial restores.
  */
 export function readPersistedDataset(): PersistedDataset | null {
   return readRaw();
@@ -172,7 +163,7 @@ export function readPersistedDataset(): PersistedDataset | null {
 
 // Exports summary:
 // - setDataset(data, columns, url?)
-// - setDatasetUrl(url)
 // - clearDatasetStore()
 // - readPersistedDataset()
+// - getRows()
 // - getColumnSchema()
