@@ -236,13 +236,19 @@
 		return str;
 	}
 
+	/** Number of read-only header lines at the top of the editor; depends on how many lines the dataset's `data` takes. */
+	function headerLineCount() {
+		// everything except the blank editable line and the closing brace
+		return getReadonlyText().split('\n').length - 2;
+	}
+
 	// Decorations for readonly lines (highlight only the text, not full-line)
 	let readonlyDecorationIds: string[] = [];
 	function updateReadonlyDecorations() {
 		if (!editorModel || !monaco) return;
 		const decos: import('monaco-editor').editor.IModelDeltaDecoration[] = [];
 		const lastLine = editorModel.getLineCount();
-		const headerMax = Math.min(5, lastLine);
+		const headerMax = Math.min(headerLineCount(), lastLine);
 		for (let line = 1; line <= headerMax; line++) {
 			const content = editorModel.getLineContent(line);
 			const firstNonWs = content.search(/\S/);
@@ -276,9 +282,9 @@
 
 		constrainedInstance = constrainedEditor(monaco);
 		constrainedInstance.initializeIn(editorView);
-		// compute editable range: lines 6 .. second-to-last
+		// compute editable range: first line after the header .. second-to-last
 		const lastLine = editorModel.getLineCount();
-		const editableStart = 6;
+		const editableStart = headerLineCount() + 1;
 		const editableEnd = Math.max(editableStart, lastLine - 1);
 		if (editableEnd >= editableStart) {
 			constrainedInstance.addRestrictionsTo(editorModel, [{
@@ -446,7 +452,7 @@
 			if (constrainedInstance && editorView.getModel()) {
 				const model = editorView.getModel()!;
 				const lastLine = model.getLineCount();
-				const editableStart = 6;
+				const editableStart = headerLineCount() + 1;
 				const editableEnd = Math.max(editableStart, lastLine - 1);
 				const restrictions: any[] = [];
 				if (editableEnd >= editableStart) {

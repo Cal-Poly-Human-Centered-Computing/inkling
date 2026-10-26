@@ -11,6 +11,11 @@ interface NavigationOptions {
 	minZoom?: number;
 	maxZoom?: number;
 	onZoomChange?: (zoom: number) => void;
+	/**
+	 * Called with `true` when holding space starts a temporary hand tool, and with `false` when it ends:
+	 * space released, or the window blurred / tab hidden while space was held.
+	 */
+	onSpaceHandChange?: (active: boolean) => void;
 }
 
 export interface FabricNavigationController {
@@ -67,6 +72,7 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 	const minZoom = options.minZoom ?? DEFAULT_MIN_ZOOM;
 	const maxZoom = options.maxZoom ?? DEFAULT_MAX_ZOOM;
 	const onZoomChange = options.onZoomChange;
+	const onSpaceHandChange = options.onSpaceHandChange;
 	let spacePressed = false;
 	let handMode = false;
 	let panStart: PointerPosition | null = null;
@@ -171,24 +177,32 @@ export function installFabricNavigation(canvas: FabricCanvas, options: Navigatio
 		canvas.requestRenderAll();
 	};
 
+	/** Updates the space state, notifying only on a change (holding space repeats keydown). */
+	const setSpacePressed = (pressed: boolean) => {
+		if (spacePressed === pressed) return;
+		spacePressed = pressed;
+		onSpaceHandChange?.(pressed);
+	};
+
 	const handleKeyDown = (event: KeyboardEvent) => {
 		if (event.code !== 'Space' || isEditableTarget(event.target)) {
 			return;
 		}
 		event.preventDefault();
-		spacePressed = true;
+		setSpacePressed(true);
 	};
 
 	const handleKeyUp = (event: KeyboardEvent) => {
 		if (event.code === 'Space') {
-			spacePressed = false;
+			// finish the pan first so the tool switch happens after its state is restored
 			if (panStart) endPan();
+			setSpacePressed(false);
 		}
 	};
 
 	const cancelPan = () => {
-		spacePressed = false;
 		endPan();
+		setSpacePressed(false);
 	};
 	const handleContextMenu = (event: MouseEvent) => {
 		event.preventDefault();

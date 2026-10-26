@@ -26,6 +26,8 @@
 
 	// selected tool state
 	let selectedTool: 'pen' | 'textbox' | 'selector' | 'hand' = 'pen';
+	/** True while space is held to pan; the hand tool is shown and used without changing `selectedTool`. */
+	let spaceHand = false;
 	let zoomPercent = 100;
 
 	// canvas background per theme; dark matches the vega-themes 'dark' background so there's no seam around the chart
@@ -91,7 +93,8 @@
 
 	function updateToolMode() {
 		if (!fabricCanvas) return;
-		if (selectedTool === 'pen') {
+		const tool = spaceHand ? 'hand' : selectedTool;
+		if (tool === 'pen') {
 			fabricCanvas.isDrawingMode = true;
 			if (fabricCanvas.freeDrawingBrush) {
 				const ratio = (typeof window !== 'undefined' && window.devicePixelRatio) ? window.devicePixelRatio : 1;
@@ -103,18 +106,18 @@
 			fabricCanvas.defaultCursor = penCursor($isDark);
 			fabricCanvas.selection = false;
 			fabricCanvas.getObjects().forEach((o: any) => (o.selectable = false));
-		} else if (selectedTool === 'selector') {
+		} else if (tool === 'selector') {
 			fabricCanvas.isDrawingMode = false;
 			fabricCanvas.freeDrawingCursor = 'crosshair';
 			fabricCanvas.defaultCursor = 'crosshair';
 			fabricCanvas.selection = true;
 			fabricCanvas.getObjects().forEach((o: any) => (o.selectable = true));
-		} else if (selectedTool === 'textbox') {
+		} else if (tool === 'textbox') {
 			fabricCanvas.isDrawingMode = false;
 			fabricCanvas.selection = false;
 			fabricCanvas.getObjects().forEach((o: any) => (o.selectable = true));
 			try { fabricCanvas.defaultCursor = 'text'; } catch (err) {}
-		} else if (selectedTool === 'hand') {
+		} else if (tool === 'hand') {
 			fabricCanvas.isDrawingMode = false;
 			fabricCanvas.selection = false;
 			fabricCanvas.defaultCursor = 'grab';
@@ -469,6 +472,12 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		fabricNavigation = installFabricNavigation(fabricCanvas, {
 			onZoomChange: (zoom) => {
 				zoomPercent = zoom * 100;
+			},
+			onSpaceHandChange: (active) => {
+				spaceHand = active;
+				updateToolMode();
+				// Fabric only refreshes the cursor on mouse move; show the change right away
+				fabricCanvas.setCursor(fabricCanvas.isDrawingMode ? fabricCanvas.freeDrawingCursor : fabricCanvas.defaultCursor);
 			}
 		});
 		fabricNavigation?.setHandMode(selectedTool === 'hand');
@@ -694,7 +703,7 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 <div class="canvas-container" bind:this={boxEl}>
 
 	<div bind:this={toolbarEl} style="position:absolute; left:0; right:0; top:0; display:flex; justify-content:center; pointer-events:auto; width: 100%; padding: 10px 10px 0 10px; z-index:10000;">
-		<CanvasToolbar selected={selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete={objectSelected}
+		<CanvasToolbar selected={spaceHand ? 'hand' : selectedTool} bind:brushColor={brushColor} bind:brushWidth={brushWidth} enableDelete={objectSelected}
 					   on:selectTool={handleSelectTool} on:delete={deleteSelectedObject}
 					   on:colorPickerOpen={handleColorPickerOpen}
 					   on:undo={undo} on:redo={redo}

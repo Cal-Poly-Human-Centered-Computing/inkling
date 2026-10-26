@@ -1,0 +1,132 @@
+import { afterEach, expect, test } from 'vitest';
+import { page } from 'vitest/browser';
+import { render } from 'vitest-browser-svelte';
+import { get } from 'svelte/store';
+import 'bulma/css/bulma.min.css';
+import '../app.css';
+import { code } from '$lib/stores/code';
+import { mockApplyChanges, mountPage } from '../test/pageHelpers';
+import Page from './+page.svelte';
+
+let restoreFetch: (() => void) | undefined;
+
+/** A small valid point chart with inline data, used as the spec before Apply. */
+const pointChart = JSON.stringify({
+	data: { values: [{ a: 1, b: 2 }, { a: 2, b: 3 }] },
+	mark: 'point',
+	encoding: {
+		x: { field: 'a', type: 'quantitative' },
+		y: { field: 'b', type: 'quantitative' }
+	}
+});
+
+/** Applies a chat message with the server mocked to return `spec`, and waits for the spec to land. */
+async function applyChat(screen: Awaited<ReturnType<typeof mountPage>>, spec: string) {
+	restoreFetch?.();
+	restoreFetch = mockApplyChanges({ ok: true, result: spec, errors: [] });
+	await screen.getByLabelText('Text input').fill('start from this chart');
+	await screen.getByRole('button', { name: 'Apply changes' }).click();
+	await expect.poll(() => get(code), { timeout: 2500 }).toContain(JSON.parse(spec).mark);
+}
+
+/** Clicks the canvas with the textbox tool, which adds a textbox (a stand-in for any canvas input). */
+async function addTextbox(screen: Awaited<ReturnType<typeof mountPage>>) {
+	await screen.getByRole('button', { name: 'Textbox tool' }).click();
+	await page.elementLocator(screen.container.querySelector('.upper-canvas')!).click({ position: { x: 200, y: 300 } });
+}
+
+// `code` is a global store and `fetch` may be mocked, so reset both
+afterEach(() => {
+	restoreFetch?.();
+	restoreFetch = undefined;
+	code.set('');
+});
+
+test('the page mounts with the editor, chat input and canvas', async () => {
+	const screen = await render(Page);
+
+	await expect.element(screen.getByLabelText('Text input')).toBeVisible();
+	await expect.element(screen.getByRole('button', { name: 'Apply changes' })).toBeVisible();
+	// Monaco and Fabric build their DOM asynchronously after mount
+	await expect.poll(() => screen.container.querySelector('.monaco-editor'), { timeout: 10_000 }).not.toBeNull();
+	await expect.poll(() => screen.container.querySelector('canvas')).not.toBeNull();
+});
+
+test('applying a chat message updates the spec and clears the chat', async () => {
+	restoreFetch = mockApplyChanges({ ok: true, result: JSON.stringify({ mark: 'bar' }), errors: [] });
+	const screen = await mountPage();
+	const chat = screen.getByLabelText('Text input');
+
+	await chat.fill('make it a bar chart');
+	await screen.getByRole('button', { name: 'Apply changes' }).click();
+
+	await expect.poll(() => get(code), { timeout: 2500 }).toContain('"bar"');
+	await expect.element(chat).toHaveValue('');
+});
+
+test('applying canvas input updates the spec and clears the canvas', async () => {
+	restoreFetch = mockApplyChanges({ ok: true, result: JSON.stringify({ mark: 'bar' }), errors: [] });
+	const screen = await mountPage();
+	const apply = screen.getByRole('button', { name: 'Apply changes' });
+	const lowerCanvas = screen.container.querySelector('canvas.lower-canvas')!;
+
+	await expect.element(apply).toBeDisabled();
+	await addTextbox(screen);
+	await expect.element(apply).toBeEnabled();
+	expect(lowerCanvas.classList.contains('is-active')).toBe(true);
+
+	await apply.click();
+
+	await expect.poll(() => get(code), { timeout: 2500 }).toContain('"bar"');
+	await expect.poll(() => lowerCanvas.classList.contains('is-active')).toBe(false);
+});
+
+test('the page is busy while a request is pending and usable again after', async () => {
+	const { promise, resolve } = Promise.withResolvers<object>();
+	restoreFetch = mockApplyChanges(promise);
+	const screen = await mountPage();
+	const chat = screen.getByLabelText('Text input');
+	const apply = screen.getByRole('button', { name: 'Apply changes' });
+
+	await chat.fill('make it a bar chart');
+	await apply.click();
+	await expect.element(chat).toBeDisabled();
+	await expect.element(apply).toBeDisabled();
+
+	resolve({ ok: true, result: JSON.stringify({ mark: 'bar' }), errors: [] });
+	await expect.element(chat).toBeEnabled();
+});
+
+test('annotating after a previous Apply and applying again updates the spec and clears the annotations', async () => {
+	const screen = await mountPage();
+	const lowerCanvas = screen.container.querySelector('canvas.lower-canvas')!;
+	await applyChat(screen, pointChart);
+
+	restoreFetch?.();
+	restoreFetch = mockApplyChanges({ ok: true, result: JSON.stringify({ mark: 'bar' }), errors: [] });
+	await addTextbox(screen);
+	expect(lowerCanvas.classList.contains('is-active')).toBe(true);
+	await screen.getByRole('button', { name: 'Apply changes' }).click();
+
+	await expect.poll(() => get(code), { timeout: 2500 }).toContain('"bar"');
+	await expect.poll(() => lowerCanvas.classList.contains('is-active')).toBe(false);
+});
+
+test('rolling back restores the spec and canvas from before Apply', async () => {
+	const screen = await mountPage();
+	const lowerCanvas = screen.container.querySelector('canvas.lower-canvas')!;
+	await applyChat(screen, pointChart);
+
+	restoreFetch?.();
+	restoreFetch = mockApplyChanges({ ok: true, result: JSON.stringify({ mark: 'bar' }), errors: [] });
+	await addTextbox(screen);
+	await screen.getByRole('button', { name: 'Apply changes' }).click();
+	await expect.poll(() => get(code), { timeout: 2500 }).toContain('"bar"');
+	await expect.poll(() => lowerCanvas.classList.contains('is-active')).toBe(false);
+
+	await screen.getByRole('button', { name: 'Rollback' }).click();
+	await screen.getByRole('dialog').getByRole('button', { name: 'Yes' }).click();
+
+	await expect.poll(() => get(code)).toContain('"point"');
+	await expect.poll(() => lowerCanvas.classList.contains('is-active')).toBe(true);
+});
