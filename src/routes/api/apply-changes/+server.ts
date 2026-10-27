@@ -1,5 +1,5 @@
-import { json, type RequestHandler } from "@sveltejs/kit";
-import {fromScratch, refine} from '$lib/server/app';
+import { json, type RequestHandler } from '@sveltejs/kit';
+import { fromScratch, refine } from '$lib/server/app';
 
 /**
  * Endpoint that receives all inputs and directs a model to
@@ -21,14 +21,22 @@ export const POST: RequestHandler = async ({ request }) => {
 
     // Shouldn't happen through the web client, since the Apply Changes button is disabled in this case
     if (!image && !chatMessage) {
-      return json({ ok: false, error: 'Nothing to apply: no sketch, annotations or chat message' }, { status: 400 });
+      return json(
+        { ok: false, error: 'Nothing to apply: no sketch, annotations or chat message' },
+        { status: 400 }
+      );
     }
 
     const pipeline = renderedVis ? refine : fromScratch;
-    const { spec, observations, errors } = await pipeline({image, chatMessage, currentSpec, columns});
+    const { spec, observations, errors } = await pipeline({
+      image,
+      chatMessage,
+      currentSpec,
+      columns
+    });
     return json({ ok: true, result: spec, observations, errors });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return json({ ok: false, error: message }, { status: 500 });
   }
-}
+};

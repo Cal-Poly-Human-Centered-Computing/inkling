@@ -35,7 +35,7 @@ npm install
 - **Students working with us:** Please talk to me (Ayaan) to get set up with API keys for Supabase and Anthropic.
 - **Everyone else:** you'll need your own accounts.
   - `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY`: create a free [Supabase](https://supabase.com/) project and copy these from its API settings. Then, under Authentication, enable the Email provider and add `http://localhost:5173/auth/callback` as a redirect URL.
-  - `CLAUDE_API_KEY` and `ANTHROPIC_WORKSPACE_ID`: create these in the [Anthropic Console](https://console.anthropic.com/). Each Apply Changes request costs a small amount of API credit. We have gotten quite far by testing with about $10 of credits. 
+  - `CLAUDE_API_KEY` and `ANTHROPIC_WORKSPACE_ID`: create these in the [Anthropic Console](https://console.anthropic.com/). Each Apply Changes request costs a small amount of API credit. We have gotten quite far by testing with about $10 of credits.
   - `CLAUDE_MODEL`: the model to use.
 
 ## Running the app

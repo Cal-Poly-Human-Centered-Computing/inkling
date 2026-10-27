@@ -1,11 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
-import {zodOutputFormat} from "@anthropic-ai/sdk/helpers/zod";
-import type {z} from "zod";
+import Anthropic from '@anthropic-ai/sdk';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import type { z } from 'zod';
 
-export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export type ImageInput = {
-  label: string;   // e.g. "Image 1: the user's sketch"
+  label: string; // e.g. "Image 1: the user's sketch"
   dataUrl: string; // data:<mime>;base64,<data>
 };
 
@@ -38,19 +38,19 @@ export type LLM = {
   conversation(system: string): Conversation;
 };
 
-const MEDIA_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
-type MediaType = typeof MEDIA_TYPES[number];
+const MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
+type MediaType = (typeof MEDIA_TYPES)[number];
 
 function toImageBlock(dataUrl: string): Anthropic.ImageBlockParam {
   const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/s);
   if (!match) {
-    throw new Error("Image must be a base64 data URL");
+    throw new Error('Image must be a base64 data URL');
   }
   const mediaType = match[1] as MediaType;
   if (!MEDIA_TYPES.includes(mediaType)) {
     throw new Error(`Unsupported image type: ${mediaType}`);
   }
-  return {type: "image", source: {type: "base64", media_type: mediaType, data: match[2]}};
+  return { type: 'image', source: { type: 'base64', media_type: mediaType, data: match[2] } };
 }
 
 function buildContent(req: Turn): Anthropic.ContentBlockParam[] {
@@ -60,20 +60,20 @@ function buildContent(req: Turn): Anthropic.ContentBlockParam[] {
   for (const image of images) {
     // Only label images when there's more than one to tell apart
     if (images.length > 1) {
-      content.push({type: "text", text: image.label});
+      content.push({ type: 'text', text: image.label });
     }
     content.push(toImageBlock(image.dataUrl));
   }
 
-  content.push({type: "text", text: req.text});
+  content.push({ type: 'text', text: req.text });
   return content;
 }
 
 function checkStopReason(res: Anthropic.Message) {
-  if (res.stop_reason === "max_tokens") {
-    throw new Error("Claude response was truncated (hit max_tokens)");
+  if (res.stop_reason === 'max_tokens') {
+    throw new Error('Claude response was truncated (hit max_tokens)');
   }
-  if (res.stop_reason === "refusal") {
+  if (res.stop_reason === 'refusal') {
     throw new Error(`Claude declined the request: ${JSON.stringify(res.stop_details)}`);
   }
 }
@@ -81,7 +81,9 @@ function checkStopReason(res: Anthropic.Message) {
 export function createLLM(config: LLMConfig): LLM {
   const client = new Anthropic({
     apiKey: config.apiKey,
-    defaultHeaders: config.workspaceId ? {"anthropic-workspace-id": config.workspaceId} : undefined
+    defaultHeaders: config.workspaceId
+      ? { 'anthropic-workspace-id': config.workspaceId }
+      : undefined
   });
 
   function baseParams(system: string, messages: Anthropic.MessageParam[]) {
@@ -90,32 +92,42 @@ export function createLLM(config: LLMConfig): LLM {
       max_tokens: 16000, // thinking tokens count against this, so leave plenty of room
       system,
       messages,
-      thinking: {type: "adaptive" as const}
+      thinking: { type: 'adaptive' as const }
     };
   }
 
   function report(res: Anthropic.Message) {
-    config.onResponse?.({model: res.model, usage: res.usage, stopReason: res.stop_reason});
+    config.onResponse?.({ model: res.model, usage: res.usage, stopReason: res.stop_reason });
   }
 
   // Returns the full response too, so conversations can keep it in their history
-  async function parse<T>(system: string, messages: Anthropic.MessageParam[], effort: Effort | undefined, schema: z.ZodType<T>) {
+  async function parse<T>(
+    system: string,
+    messages: Anthropic.MessageParam[],
+    effort: Effort | undefined,
+    schema: z.ZodType<T>
+  ) {
     const res = await client.messages.parse({
       ...baseParams(system, messages),
-      output_config: {effort: effort ?? "high", format: zodOutputFormat(schema)}
+      output_config: { effort: effort ?? 'high', format: zodOutputFormat(schema) }
     });
     report(res);
     checkStopReason(res);
 
     if (res.parsed_output == null) {
-      throw new Error("Claude response did not match the expected schema");
+      throw new Error('Claude response did not match the expected schema');
     }
-    return {res, parsed: res.parsed_output as T};
+    return { res, parsed: res.parsed_output as T };
   }
 
   return {
     async structured(req, schema) {
-      const {parsed} = await parse(req.system, [{role: "user", content: buildContent(req)}], req.effort, schema);
+      const { parsed } = await parse(
+        req.system,
+        [{ role: 'user', content: buildContent(req) }],
+        req.effort,
+        schema
+      );
       return parsed;
     },
 
@@ -124,12 +136,17 @@ export function createLLM(config: LLMConfig): LLM {
 
       return {
         async ask(turn, schema) {
-          const userMessage: Anthropic.MessageParam = {role: "user", content: buildContent(turn)};
-          const {res, parsed} = await parse(system, [...messages, userMessage], turn.effort, schema);
+          const userMessage: Anthropic.MessageParam = { role: 'user', content: buildContent(turn) };
+          const { res, parsed } = await parse(
+            system,
+            [...messages, userMessage],
+            turn.effort,
+            schema
+          );
 
           // Only record the exchange once it succeeded. The reply is kept exactly as returned,
           // thinking blocks included: editing earlier turns invalidates the model's later reasoning.
-          messages.push(userMessage, {role: "assistant", content: res.content});
+          messages.push(userMessage, { role: 'assistant', content: res.content });
           return parsed;
         }
       };

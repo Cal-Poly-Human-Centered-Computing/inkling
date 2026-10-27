@@ -1,10 +1,10 @@
 <script lang="ts">
-  import {CodeEditor, ChatBox, VersionControlToolbar, CanvasView} from '$lib/components';
+  import { CodeEditor, ChatBox, VersionControlToolbar, CanvasView } from '$lib/components';
   import { code as codeStore } from '$lib/stores/code';
-  import {get} from "svelte/store";
+  import { get } from 'svelte/store';
   import { observations as observationsStore } from '$lib/stores/observations';
-  import {getColumnSchema} from "$lib/utils/datasetStore";
-  import DatasetToolbar from "$lib/components/DatasetToolbar.svelte";
+  import { getColumnSchema } from '$lib/utils/datasetStore';
+  import DatasetToolbar from '$lib/components/DatasetToolbar.svelte';
 
   let uploadedFile: File | null = null;
   let canvasViewRef: any = null;
@@ -15,7 +15,7 @@
   let historyStacks: Array<Array<string>> = [];
   let historyIndex = -1;
 
-  let message = ''
+  let message = '';
 
   function textInputIsActive() {
     return message.trim().length > 0;
@@ -57,7 +57,9 @@
       win.document.close();
       return true;
     } catch (err) {
-      try { win.close(); } catch (_) {}
+      try {
+        win.close();
+      } catch (_) {}
       return false;
     }
   }
@@ -75,8 +77,16 @@
       // Export the canvas only if something has been drawn on it
       let dataUrl: string | null = null;
       try {
-        if (canvasIsActive() && canvasViewRef && typeof canvasViewRef.exportCanvasDataUrl === 'function') {
-          dataUrl = await canvasViewRef.exportCanvasDataUrl('image/png', undefined, window.devicePixelRatio ?? 1);
+        if (
+          canvasIsActive() &&
+          canvasViewRef &&
+          typeof canvasViewRef.exportCanvasDataUrl === 'function'
+        ) {
+          dataUrl = await canvasViewRef.exportCanvasDataUrl(
+            'image/png',
+            undefined,
+            window.devicePixelRatio ?? 1
+          );
           // FOR DEBUGGING: uncomment the below block to see a preview of the exported image
           // if (dataUrl) {
           //   const opened = openImageInNewTab(dataUrl);
@@ -95,7 +105,10 @@
         }
       } catch (err) {
         console.error('Failed to export canvas image:', err);
-        alert('Failed to export canvas image: ' + (err && (err as any).message ? (err as any).message : String(err)));
+        alert(
+          'Failed to export canvas image: ' +
+            (err && (err as any).message ? (err as any).message : String(err))
+        );
         applying = false;
         return;
       }
@@ -134,27 +147,26 @@
       }
       message = '';
 
-//       const resultText = `{
-//   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-//   "data": {
-//     "url": "https://vega.github.io/vega-datasets/data/cars.json"
-//   },
-//   "mark": "point",
-//   "encoding": {
-//     "x": {
-//       "field": "Horsepower",
-//       "type": "quantitative",
-//       "title": "Horsepower"
-//     },
-//     "y": {
-//       "field": "Miles_per_Gallon",
-//       "type": "quantitative",
-//       "title": "Miles per Gallon"
-//     }
-//   }
-// }`
+      //       const resultText = `{
+      //   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+      //   "data": {
+      //     "url": "https://vega.github.io/vega-datasets/data/cars.json"
+      //   },
+      //   "mark": "point",
+      //   "encoding": {
+      //     "x": {
+      //       "field": "Horsepower",
+      //       "type": "quantitative",
+      //       "title": "Horsepower"
+      //     },
+      //     "y": {
+      //       "field": "Miles_per_Gallon",
+      //       "type": "quantitative",
+      //       "title": "Miles per Gallon"
+      //     }
+      //   }
+      // }`
       await handleIncomingCodeUpdate(resultText);
-
     } catch (err) {
       console.error('Failed to apply changes:', err);
     } finally {
@@ -193,7 +205,6 @@
     codeEditorRef.handleDatasetAttached();
   }
 
-
   function handleRollbackChanges() {
     showRollbackConfirmationModal = true;
   }
@@ -204,13 +215,15 @@
 
   function handleConfirmRollback() {
     showRollbackConfirmationModal = false;
-    codeEditorRef.rollbackChanges()
-    canvasViewRef.rollbackChanges()
+    codeEditorRef.rollbackChanges();
+    canvasViewRef.rollbackChanges();
   }
-
 </script>
 
-<div class="container is-fluid" style="height:100vh; padding:1rem; background-color: var(--color-bg)">
+<div
+  class="container is-fluid"
+  style="height:100vh; padding:1rem; background-color: var(--color-bg)"
+>
   <div class="columns" style="height:100%;">
     <div class="column is-half" style="display:flex; flex-direction:column; padding-right:0.5rem;">
       <div style="flex: 0 0 auto; height: 3rem;">
@@ -224,20 +237,25 @@
 
       <!-- Chatbox pinned to bottom -->
       <div style="flex:0 0 auto; margin-top:0.5rem;">
-        <ChatBox bind:message={message} sending={applying} on:send={handleApplyChanges} />
+        <ChatBox bind:message sending={applying} on:send={handleApplyChanges} />
       </div>
     </div>
 
     <div class="column is-half" style="display:flex; flex-direction:column; padding-left:0.5rem;">
       <!-- VersionControlToolbar -->
       <div style="flex:0 0 auto; height: 3rem;">
-        <VersionControlToolbar on:applyChanges={handleApplyChanges} on:rollbackChanges={handleRollbackChanges}
-                               canApply={textInputIsActive() || canvasIsActive()} canRollback={historyStacks.length >= 1} applying={applying} />
+        <VersionControlToolbar
+          on:applyChanges={handleApplyChanges}
+          on:rollbackChanges={handleRollbackChanges}
+          canApply={textInputIsActive() || canvasIsActive()}
+          canRollback={historyStacks.length >= 1}
+          {applying}
+        />
       </div>
 
       <!-- Canvas / visualization area -->
       <div style="flex:1 1 auto; min-height:0;">
-        <CanvasView bind:this={canvasViewRef} bind:historyIndex={historyIndex} bind:historyStacks={historyStacks} applying={applying} />
+        <CanvasView bind:this={canvasViewRef} bind:historyIndex bind:historyStacks {applying} />
       </div>
     </div>
   </div>
@@ -246,19 +264,27 @@
 <!--Rollback confirmation modal-->
 {#if showRollbackConfirmationModal}
   <div class="modal is-active" role="dialog" aria-modal="true" aria-label="Confirm rollback dialog">
-    <div class="modal-background" role="button" tabindex="0" aria-label="Close rollback dialog" on:click={cancelRollback} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelRollback(); }}></div>
+    <div
+      class="modal-background"
+      role="button"
+      tabindex="0"
+      aria-label="Close rollback dialog"
+      on:click={cancelRollback}
+      on:keydown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelRollback();
+      }}
+    ></div>
     <div class="modal-card">
       <header class="modal-card-head">
         <p class="modal-card-title">Undo changes applied to canvas and code?</p>
       </header>
       <footer class="modal-card-foot" style="justify-content: end;">
         <button class="button" on:click={cancelRollback}>Cancel</button>&nbsp;
-        <button class="button accent-button" on:click={handleConfirmRollback} >Yes</button>&nbsp;
+        <button class="button accent-button" on:click={handleConfirmRollback}>Yes</button>&nbsp;
       </footer>
     </div>
   </div>
 {/if}
-
 
 <style>
   :global(html, body) {

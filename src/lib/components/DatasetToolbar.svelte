@@ -1,245 +1,299 @@
 <script lang="ts">
-    import Fa from "svelte-fa";
-    import {faDatabase} from "@fortawesome/free-solid-svg-icons";
-    import {loadDatasetFromUrl as loadDatasetFromUrlHelper} from "$lib/utils/datasetLoader";
-    import {setDataset} from "$lib/utils/datasetStore";
-    import {createEventDispatcher, onDestroy} from "svelte";
+  import Fa from 'svelte-fa';
+  import { faDatabase } from '@fortawesome/free-solid-svg-icons';
+  import { loadDatasetFromUrl as loadDatasetFromUrlHelper } from '$lib/utils/datasetLoader';
+  import { setDataset } from '$lib/utils/datasetStore';
+  import { createEventDispatcher, onDestroy } from 'svelte';
 
-    const dispatch = createEventDispatcher();
+  const dispatch = createEventDispatcher();
 
-    // upload modal state
-    let showUploadModal = false;
-    let selectedFile: File | null = null;
-    let fileInputEl: HTMLInputElement | null = null;
+  // upload modal state
+  let showUploadModal = false;
+  let selectedFile: File | null = null;
+  let fileInputEl: HTMLInputElement | null = null;
 
-    // dataset modal state
-    let showDatasetModal: boolean = false;
-    let datasetMode: 'file' | 'url' = 'url';
-    let datasetFile: File | null = null;
-    let datasetFileInput: HTMLInputElement | null = null;
-    let datasetUrl: string = '';
+  // dataset modal state
+  let showDatasetModal: boolean = false;
+  let datasetMode: 'file' | 'url' = 'url';
+  let datasetFile: File | null = null;
+  let datasetFileInput: HTMLInputElement | null = null;
+  let datasetUrl: string = '';
 
-    // dataset help popover state
-    let showDatasetHelp = false;
-    let helpButtonEl: HTMLButtonElement | null = null;
-    let helpPopoverEl: HTMLDivElement | null = null;
+  // dataset help popover state
+  let showDatasetHelp = false;
+  let helpButtonEl: HTMLButtonElement | null = null;
+  let helpPopoverEl: HTMLDivElement | null = null;
 
-    function openUploadModal() {
-        selectedFile = null;
-        showUploadModal = true;
-        setTimeout(() => fileInputEl?.focus(), 0);
+  function openUploadModal() {
+    selectedFile = null;
+    showUploadModal = true;
+    setTimeout(() => fileInputEl?.focus(), 0);
+  }
+
+  function onFileChange(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (input.files && input.files[0]) {
+      selectedFile = input.files[0];
+    } else {
+      selectedFile = null;
     }
+  }
 
-    function onFileChange(e: Event) {
-        const input = e.target as HTMLInputElement;
-        if (input.files && input.files[0]) {
-            selectedFile = input.files[0];
-        } else {
-            selectedFile = null;
-        }
+  function confirmUpload() {
+    if (selectedFile) {
+      dispatch('upload', selectedFile);
     }
+    showUploadModal = false;
+  }
 
-    function confirmUpload() {
-        if (selectedFile) {
-            dispatch('upload', selectedFile);
-        }
-        showUploadModal = false;
+  function cancelUpload() {
+    selectedFile = null;
+    showUploadModal = false;
+  }
+
+  // dataset modal handlers
+  function openDatasetModal() {
+    datasetMode = 'url';
+    datasetFile = null;
+    datasetUrl = '';
+    showDatasetModal = true;
+    setTimeout(() => datasetFileInput?.focus(), 0);
+  }
+
+  function onDatasetFileChange(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (input.files && input.files[0]) datasetFile = input.files[0];
+    else datasetFile = null;
+  }
+
+  // // hide the help popover whenever the user switches away from file mode
+  // $: if (datasetMode !== 'file') {
+  // 	showDatasetHelp = false;
+  // 	document.removeEventListener('mousedown', handleDocClick);
+  // }
+
+  async function attachDataset() {
+    // close any help popover when confirming
+    showDatasetHelp = false;
+    document.removeEventListener('mousedown', handleDocClick);
+    if (datasetMode === 'file' && datasetFile) {
+      dispatch('attachDataset', { kind: 'file', file: datasetFile });
+      showDatasetModal = false;
+    } else if (datasetMode === 'url' && datasetUrl.trim()) {
+      datasetUrl = datasetUrl.trim();
+      try {
+        const res = await loadDatasetFromUrlHelper(datasetUrl);
+        console.log('Dataset loaded via helper:', res);
+
+        setDataset(res.data, res.columns, datasetUrl);
+
+        dispatch('datasetAttached');
+      } catch (err) {
+        console.error('Failed to load dataset via helper:', err);
+      }
+      showDatasetModal = false;
     }
+  }
 
-    function cancelUpload() {
-        selectedFile = null;
-        showUploadModal = false;
+  function cancelDataset() {
+    datasetFile = null;
+    datasetUrl = '';
+    // ensure help popover closed when cancelling
+    showDatasetHelp = false;
+    document.removeEventListener('mousedown', handleDocClick);
+    showDatasetModal = false;
+  }
+
+  // helpers for the dataset help popover
+  function toggleDatasetHelp() {
+    showDatasetHelp = !showDatasetHelp;
+    if (showDatasetHelp) document.addEventListener('mousedown', handleDocClick);
+    else document.removeEventListener('mousedown', handleDocClick);
+  }
+
+  function handleDocClick(e: MouseEvent) {
+    const target = e.target as Node;
+    if (!helpPopoverEl?.contains(target) && !helpButtonEl?.contains(target)) {
+      showDatasetHelp = false;
+      document.removeEventListener('mousedown', handleDocClick);
     }
+  }
 
-    // dataset modal handlers
-    function openDatasetModal() {
-        datasetMode = 'url';
-        datasetFile = null;
-        datasetUrl = '';
-        showDatasetModal = true;
-        setTimeout(() => datasetFileInput?.focus(), 0);
-    }
-
-    function onDatasetFileChange(e: Event) {
-        const input = e.target as HTMLInputElement;
-        if (input.files && input.files[0]) datasetFile = input.files[0];
-        else datasetFile = null;
-    }
-
-    // // hide the help popover whenever the user switches away from file mode
-    // $: if (datasetMode !== 'file') {
-    // 	showDatasetHelp = false;
-    // 	document.removeEventListener('mousedown', handleDocClick);
-    // }
-
-    async function attachDataset() {
-        // close any help popover when confirming
-        showDatasetHelp = false;
+  onDestroy(() => {
+    try {
+      // ensure any document listener used by the dataset help popover is removed
+      if (typeof document !== 'undefined') {
         document.removeEventListener('mousedown', handleDocClick);
-        if (datasetMode === 'file' && datasetFile) {
-            dispatch('attachDataset', { kind: 'file', file: datasetFile });
-            showDatasetModal = false;
-        } else if (datasetMode === 'url' && datasetUrl.trim()) {
-            datasetUrl = datasetUrl.trim()
-            try {
-                const res = await loadDatasetFromUrlHelper(datasetUrl);
-                console.log('Dataset loaded via helper:', res);
-
-                setDataset(res.data, res.columns, datasetUrl);
-
-                dispatch('datasetAttached');
-            } catch (err) {
-                console.error('Failed to load dataset via helper:', err);
-            }
-            showDatasetModal = false;
-        }
-    }
-
-    function cancelDataset() {
-        datasetFile = null;
-        datasetUrl = '';
-        // ensure help popover closed when cancelling
-        showDatasetHelp = false;
-        document.removeEventListener('mousedown', handleDocClick);
-        showDatasetModal = false;
-    }
-
-    // helpers for the dataset help popover
-    function toggleDatasetHelp() {
-        showDatasetHelp = !showDatasetHelp;
-        if (showDatasetHelp) document.addEventListener('mousedown', handleDocClick);
-        else document.removeEventListener('mousedown', handleDocClick);
-    }
-
-    function handleDocClick(e: MouseEvent) {
-        const target = e.target as Node;
-        if (!helpPopoverEl?.contains(target) && !helpButtonEl?.contains(target)) {
-            showDatasetHelp = false;
-            document.removeEventListener('mousedown', handleDocClick);
-        }
-    }
-
-    onDestroy(() => {
-        try {
-            // ensure any document listener used by the dataset help popover is removed
-            if (typeof document !== 'undefined') {
-                document.removeEventListener('mousedown', handleDocClick);
-            }
-        } catch (err) {}
-    });
+      }
+    } catch (err) {}
+  });
 </script>
 
 <div>
-    <div class="field" style="flex:0 0 auto; display:flex; align-items:center; gap:0.5rem;">
-        <button class="button is-light accent-button" aria-label="Attach dataset" on:click={openDatasetModal}>
-            <span class="icon is-small"><Fa icon={faDatabase} /></span>
-        </button>
-    </div>
+  <div class="field" style="flex:0 0 auto; display:flex; align-items:center; gap:0.5rem;">
+    <button
+      class="button is-light accent-button"
+      aria-label="Attach dataset"
+      on:click={openDatasetModal}
+    >
+      <span class="icon is-small"><Fa icon={faDatabase} /></span>
+    </button>
+  </div>
 </div>
 
 <!-- Dataset modal -->
 {#if showDatasetModal}
-    <div class="modal is-active" role="dialog" aria-modal="true" aria-label="Attach dataset dialog">
-        <div class="modal-background" role="button" tabindex="0" aria-label="Close dataset dialog" on:click={cancelDataset} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelDataset(); }}></div>
-        <div class="modal-card">
-            <header class="modal-card-head">
-                <p class="modal-card-title">Attach dataset</p>
-                <button class="delete" aria-label="close" on:click={cancelDataset}></button>
-            </header>
-            <section class="modal-card-body">
-                <div class="field">
-                    <label class="label" for="dataset-mode-select">Source</label>
-                    <div class="control dataset-source-control" style="display:flex; align-items:center; gap:0.5rem; position:relative;">
-                        <div class="select">
-                            <select id="dataset-mode-select" bind:value={datasetMode} aria-label="Choose dataset source">
-                                <!--								<option value="file">Upload CSV file</option>-->
-                                <option value="url">URL</option>
-                            </select>
-                        </div>
-                        <button class="button is-white help-icon-button" aria-label="Dataset help" bind:this={helpButtonEl} on:click={toggleDatasetHelp} aria-expanded={showDatasetHelp}>
-                            <span class="icon is-small">?</span>
-                        </button>
-                        {#if showDatasetHelp}
-                            <div bind:this={helpPopoverEl} class="dataset-help-popover" role="dialog" aria-live="polite">
-                                <p style="margin:0; font-size:0.9rem;">Only CSV column names (not data values) are sent to the AI server to build the Vega-Lite specifications.</p>
-                            </div>
-                        {/if}
-                    </div>
-                </div>
-
-                {#if datasetMode === 'file'}
-                    <div class="field">
-                        <label class="label" for="dataset-file-input">CSV file</label>
-                        <div class="control">
-                            <input id="dataset-file-input" bind:this={datasetFileInput} class="input" type="file" accept=".csv,text/csv" on:change={onDatasetFileChange} />
-                        </div>
-                        {#if datasetFile}
-                            <p class="help">Selected: {datasetFile.name}</p>
-                        {/if}
-                    </div>
-                {:else}
-                    <div class="field">
-                        <label class="label" for="dataset-url-input">Dataset URL</label>
-                        <div class="control">
-                            <input id="dataset-url-input" class="input" type="url" placeholder="https://example.com/data.csv or .json" bind:value={datasetUrl} />
-                        </div>
-                        <p class="help">You can use public URLs like https://vega.github.io/vega-datasets/data/cars.json</p>
-                    </div>
-                {/if}
-            </section>
-            <footer class="modal-card-foot">
-                <button class="button accent-button" on:click={attachDataset} disabled={(datasetMode === 'file' && !datasetFile) || (datasetMode === 'url' && !datasetUrl)}>Attach</button>&nbsp;
-                <button class="button" on:click={cancelDataset}>Cancel</button>
-            </footer>
+  <div class="modal is-active" role="dialog" aria-modal="true" aria-label="Attach dataset dialog">
+    <div
+      class="modal-background"
+      role="button"
+      tabindex="0"
+      aria-label="Close dataset dialog"
+      on:click={cancelDataset}
+      on:keydown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') cancelDataset();
+      }}
+    ></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Attach dataset</p>
+        <button class="delete" aria-label="close" on:click={cancelDataset}></button>
+      </header>
+      <section class="modal-card-body">
+        <div class="field">
+          <label class="label" for="dataset-mode-select">Source</label>
+          <div
+            class="control dataset-source-control"
+            style="display:flex; align-items:center; gap:0.5rem; position:relative;"
+          >
+            <div class="select">
+              <select
+                id="dataset-mode-select"
+                bind:value={datasetMode}
+                aria-label="Choose dataset source"
+              >
+                <!--								<option value="file">Upload CSV file</option>-->
+                <option value="url">URL</option>
+              </select>
+            </div>
+            <button
+              class="button is-white help-icon-button"
+              aria-label="Dataset help"
+              bind:this={helpButtonEl}
+              on:click={toggleDatasetHelp}
+              aria-expanded={showDatasetHelp}
+            >
+              <span class="icon is-small">?</span>
+            </button>
+            {#if showDatasetHelp}
+              <div
+                bind:this={helpPopoverEl}
+                class="dataset-help-popover"
+                role="dialog"
+                aria-live="polite"
+              >
+                <p style="margin:0; font-size:0.9rem;">
+                  Only CSV column names (not data values) are sent to the AI server to build the
+                  Vega-Lite specifications.
+                </p>
+              </div>
+            {/if}
+          </div>
         </div>
+
+        {#if datasetMode === 'file'}
+          <div class="field">
+            <label class="label" for="dataset-file-input">CSV file</label>
+            <div class="control">
+              <input
+                id="dataset-file-input"
+                bind:this={datasetFileInput}
+                class="input"
+                type="file"
+                accept=".csv,text/csv"
+                on:change={onDatasetFileChange}
+              />
+            </div>
+            {#if datasetFile}
+              <p class="help">Selected: {datasetFile.name}</p>
+            {/if}
+          </div>
+        {:else}
+          <div class="field">
+            <label class="label" for="dataset-url-input">Dataset URL</label>
+            <div class="control">
+              <input
+                id="dataset-url-input"
+                class="input"
+                type="url"
+                placeholder="https://example.com/data.csv or .json"
+                bind:value={datasetUrl}
+              />
+            </div>
+            <p class="help">
+              You can use public URLs like https://vega.github.io/vega-datasets/data/cars.json
+            </p>
+          </div>
+        {/if}
+      </section>
+      <footer class="modal-card-foot">
+        <button
+          class="button accent-button"
+          on:click={attachDataset}
+          disabled={(datasetMode === 'file' && !datasetFile) ||
+            (datasetMode === 'url' && !datasetUrl)}>Attach</button
+        >&nbsp;
+        <button class="button" on:click={cancelDataset}>Cancel</button>
+      </footer>
     </div>
+  </div>
 {/if}
 
 <style>
+  .help-icon-button {
+    border-radius: 50%;
+    width: 1.6rem;
+    height: 1.6rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .dataset-help-popover {
+    position: absolute;
+    top: 2.4rem;
+    left: 0;
+    z-index: 40;
+    padding: 0.5rem;
+    border-radius: 6px;
+    width: 260px;
+    font-size: 0.9rem;
+  }
+
+  /* Default (light) theme styles */
+  @media (prefers-color-scheme: light) {
+    /* dataset help styles (light) */
     .help-icon-button {
-        border-radius: 50%;
-        width: 1.6rem;
-        height: 1.6rem;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
+      border: 1px solid rgba(0, 0, 0, 0.08);
     }
     .dataset-help-popover {
-        position: absolute;
-        top: 2.4rem;
-        left: 0;
-        z-index: 40;
-        padding: 0.5rem;
-        border-radius: 6px;
-        width: 260px;
-        font-size: 0.9rem;
+      background: white;
+      border: 1px solid #e6e6e6;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
     }
+  }
 
-    /* Default (light) theme styles */
-    @media (prefers-color-scheme: light) {
-        /* dataset help styles (light) */
-        .help-icon-button {
-            border: 1px solid rgba(0,0,0,0.08);
-        }
-        .dataset-help-popover {
-            background: white;
-            border: 1px solid #e6e6e6;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-        }
+  /* Dark theme styles */
+  @media (prefers-color-scheme: dark) {
+    /* dataset help styles (dark) */
+    .help-icon-button {
+      border: 1px solid rgba(255, 255, 255, 0.06);
     }
-
-    /* Dark theme styles */
-    @media (prefers-color-scheme: dark) {
-        /* dataset help styles (dark) */
-        .help-icon-button {
-            border: 1px solid rgba(255,255,255,0.06);
-        }
-        .dataset-help-popover {
-            background: #0f0f0f;
-            border: 1px solid rgba(255,255,255,0.06);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.6);
-            color: #eaeaea;
-        }
+    .dataset-help-popover {
+      background: #0f0f0f;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+      color: #eaeaea;
     }
+  }
 </style>

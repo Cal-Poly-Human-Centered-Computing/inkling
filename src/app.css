@@ -1,65 +1,63 @@
 :root {
-    --color-light-gold: #f7e489ff;
-    --color-tea-green: #c1d7aeff;
-    --color-dusty-olive: #668961ff;
-    --color-lavender-gray: #78799A;
-    --color-platinum: #F4F4F6;
+  --color-light-gold: #f7e489ff;
+  --color-tea-green: #c1d7aeff;
+  --color-dusty-olive: #668961ff;
+  --color-lavender-gray: #78799a;
+  --color-platinum: #f4f4f6;
 
-    --color-light-cream: #FFFDFB;
-    --color-cream: #F3E8CE;
-    --color-warm-gray: #968E85;
-    --color-warm-dark: #2a2723; /* dark neutral derived from the warm-gray hue */
-    --color-very-dark: #161512;
+  --color-light-cream: #fffdfb;
+  --color-cream: #f3e8ce;
+  --color-warm-gray: #968e85;
+  --color-warm-dark: #2a2723; /* dark neutral derived from the warm-gray hue */
+  --color-very-dark: #161512;
 
+  --color-apply-changes-dark: var(--color-dusty-olive);
+  --color-apply-changes-light: var(--color-tea-green);
 
-    --color-apply-changes-dark: var(--color-dusty-olive);
-    --color-apply-changes-light: var(--color-tea-green);
+  --color-rollback-changes: var(--color-light-gold);
 
-    --color-rollback-changes: var(--color-light-gold);
+  /* light mode color assignments */
+  --color-bg: var(--color-light-cream);
+  --color-outline: var(--color-warm-gray);
 
+  --color-accent: var(--color-lavender-gray);
+  --color-accent-text: var(--color-platinum);
 
-    /* light mode color assignments */
-    --color-bg: var(--color-light-cream);
-    --color-outline: var(--color-warm-gray);
+  --bulma-arrow-color: var(--color-accent);
 
-    --color-accent: var(--color-lavender-gray);
-    --color-accent-text: var(--color-platinum);
+  /* #78799A converted to HSL */
+  --bulma-focus-h: 238;
+  --bulma-focus-s: 14%;
+  --bulma-focus-l: 54%;
 
-    --bulma-arrow-color: var(--color-accent);
+  --bulma-focus-shadow-size: 0 0 0 0.1875em;
+  --bulma-focus-shadow-alpha: 0.25;
 
-    /* #78799A converted to HSL */
-    --bulma-focus-h: 238;
-    --bulma-focus-s: 14%;
-    --bulma-focus-l: 54%;
-
-    --bulma-focus-shadow-size: 0 0 0 0.1875em;
-    --bulma-focus-shadow-alpha: 0.25;
-
-    /* floating surfaces we own (editor copy button, removed-lines overlay) */
-    --color-float-bg: var(--color-cream);
-    --color-float-text: #333;
-    --color-float-border: var(--color-warm-gray);
+  /* floating surfaces we own (editor copy button, removed-lines overlay) */
+  --color-float-bg: var(--color-cream);
+  --color-float-text: #333;
+  --color-float-border: var(--color-warm-gray);
 }
 
 .accent-button {
-    background-color: var(--color-accent);
-    color: var(--color-accent-text);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  background-color: var(--color-accent);
+  color: var(--color-accent-text);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .accent-button:disabled {
-    color: var(--color-warm-gray)
+  color: var(--color-warm-gray);
 }
 
 @media (prefers-color-scheme: dark) {
-    :root {
-        --color-float-bg: var(--color-warm-dark);
-        --color-float-text: var(--color-cream);
-        --color-float-border: var(--color-warm-gray);
+  :root {
+    --color-float-bg: var(--color-warm-dark);
+    --color-float-text: var(--color-cream);
+    --color-float-border: var(--color-warm-gray);
 
-        --color-bg: var(--color-very-dark);
+    --color-bg: var(--color-very-dark);
 
-        --color-accent: var(--color-lavender-gray);
-        --color-accent-text: var(--color-light-cream);
-    }
+    --color-accent: var(--color-lavender-gray);
+    --color-accent-text: var(--color-light-cream);
+  }
 }

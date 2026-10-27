@@ -9,7 +9,7 @@ export type LoadedDataset = {
 
 /**
  * Extract column names.
- * 
+ *
  * @param obj An array of objects, or an object that contains a "columns" field
  * @return A list of column names
  */
@@ -19,7 +19,12 @@ export function extractColumns(obj: any): string[] {
     if (obj && Array.isArray((obj as any).columns)) return (obj as any).columns;
 
     // array of objects -> every key that appears in any row, in order of first appearance
-    if (Array.isArray(obj) && obj.length > 0 && typeof obj[0] === 'object' && !Array.isArray(obj[0])) {
+    if (
+      Array.isArray(obj) &&
+      obj.length > 0 &&
+      typeof obj[0] === 'object' &&
+      !Array.isArray(obj[0])
+    ) {
       const keys = new Set<string>();
       for (const row of obj) {
         for (const key of Object.keys(row ?? {})) keys.add(key);
@@ -38,7 +43,7 @@ export function extractColumns(obj: any): string[] {
  *  - determine resource type by URL extension and Content-Type header
  *  - if neither identifies the type, try parsing as JSON, then as CSV
  *  - for CSVs, use d3.autoType
- * 
+ *
  * @param url Passed directly to `fetch`
  * @returns { LoadedDataset }
  */
@@ -55,9 +60,12 @@ export async function loadDatasetFromUrl(url: string): Promise<LoadedDataset> {
   const ext = urlLower.endsWith('.csv') ? 'csv' : urlLower.endsWith('.json') ? 'json' : undefined;
   const contentType = res.headers.get('Content-Type') ?? '';
 
-  const type = ext === 'csv' || contentType.includes('csv') ? 'csv' :
-    ext === 'json' || contentType.includes('json') ? 'json' :
-      undefined;
+  const type =
+    ext === 'csv' || contentType.includes('csv')
+      ? 'csv'
+      : ext === 'json' || contentType.includes('json')
+        ? 'json'
+        : undefined;
 
   let data;
   try {
@@ -77,7 +85,7 @@ export async function loadDatasetFromUrl(url: string): Promise<LoadedDataset> {
       }
     }
   } catch (err) {
-    throw new Error(`Failed to parse data. Expected CSV or JSON-formatted data at URL:\n\t${url}`)
+    throw new Error(`Failed to parse data. Expected CSV or JSON-formatted data at URL:\n\t${url}`);
   }
 
   if (!isRecordArray(data)) {
@@ -94,8 +102,9 @@ export async function loadDatasetFromUrl(url: string): Promise<LoadedDataset> {
  * @returns true if `data` is a non-empty array of objects, false otherwise
  */
 function isRecordArray(data: unknown): boolean {
-  return Array.isArray(data) &&
+  return (
+    Array.isArray(data) &&
     data.length > 0 &&
-    data.every(r => r !== null && typeof r === 'object' && !Array.isArray(r));
+    data.every((r) => r !== null && typeof r === 'object' && !Array.isArray(r))
+  );
 }
-

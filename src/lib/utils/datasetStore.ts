@@ -3,7 +3,7 @@
 import { autoType } from 'd3-dsv';
 
 export function getDataToken(): any {
-  const dataset = readRaw()
+  const dataset = readRaw();
   if (!dataset) return null;
 
   // TODO: eventually, also account for if a csv was uploaded
@@ -68,15 +68,17 @@ export function estimateType(values: any[]): EstimatedColumnType {
     const text = String(value).trim().replace(SPACE_DATETIME, '$1T');
     const parsed = autoType<{ v: string | number | boolean | Date | null }, 'v'>({ v: text }).v;
     if (parsed === null) continue; // empty or whitespace-only
-    types.add(typeof parsed === 'number' ? 'quantitative' : parsed instanceof Date ? 'temporal' : 'nominal');
+    types.add(
+      typeof parsed === 'number' ? 'quantitative' : parsed instanceof Date ? 'temporal' : 'nominal'
+    );
   }
   return types.size === 1 ? [...types][0] : 'nominal';
 }
 
 function estimateSchema(columns: string[], data: Record<string, any>[]): ColumnSchema {
-  return columns.map(name => ({
+  return columns.map((name) => ({
     name,
-    type: estimateType(data.map(row => row?.[name]))
+    type: estimateType(data.map((row) => row?.[name]))
   }));
 }
 
@@ -130,7 +132,7 @@ export function setDataset(data: Record<string, any>[], columns: string[], url?:
     url: url ?? undefined,
     columns: columns?.length ? columns : undefined,
     schema: columns?.length ? estimateSchema(columns, data ?? []) : undefined,
-    timestamp: Date.now(),
+    timestamp: Date.now()
   };
 
   // rows first, so a failed (too large) write doesn't leave new metadata alongside the old dataset's rows

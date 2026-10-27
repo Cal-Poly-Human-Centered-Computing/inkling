@@ -1,7 +1,7 @@
 import prompts from './prompts';
-import type {Conversation, LLM} from './prompting';
-import {renderSpec} from './render';
-import {ReviewVerdict, SpecOutput, SpecRevision, type ColumnSchema} from './schemas';
+import type { Conversation, LLM } from './prompting';
+import { renderSpec } from './render';
+import { ReviewVerdict, SpecOutput, SpecRevision, type ColumnSchema } from './schemas';
 
 export type Pipelines = ReturnType<typeof createPipelines>;
 
@@ -23,17 +23,23 @@ export type SpecResult = {
 };
 
 function formatColumns(columns: ColumnSchema) {
-  return columns.map(c => `${c.name}: ${c.type}`).join("\n");
+  return columns.map((c) => `${c.name}: ${c.type}`).join('\n');
 }
 
 // The text inputs in the agreed order (code, chat, columns), each only if present.
 // Any image is sent ahead of this text (see buildContent in prompting.ts).
-function formatInputs(inputs: { currentSpec?: string | null; chatMessage?: string | null; columns: ColumnSchema }) {
+function formatInputs(inputs: {
+  currentSpec?: string | null;
+  chatMessage?: string | null;
+  columns: ColumnSchema;
+}) {
   const blocks: string[] = [];
-  if (inputs.currentSpec?.trim()) blocks.push(`<current_spec>\n${inputs.currentSpec}\n</current_spec>`);
-  if (inputs.chatMessage?.trim()) blocks.push(`<chat_instruction>\n${inputs.chatMessage}\n</chat_instruction>`);
+  if (inputs.currentSpec?.trim())
+    blocks.push(`<current_spec>\n${inputs.currentSpec}\n</current_spec>`);
+  if (inputs.chatMessage?.trim())
+    blocks.push(`<chat_instruction>\n${inputs.chatMessage}\n</chat_instruction>`);
   blocks.push(`<columns>\n${formatColumns(inputs.columns)}\n</columns>`);
-  return blocks.join("\n\n");
+  return blocks.join('\n\n');
 }
 
 /**
@@ -41,7 +47,6 @@ function formatInputs(inputs: { currentSpec?: string | null; chatMessage?: strin
  * Kept free of SvelteKit imports; app.ts binds it to the configured client.
  */
 export function createPipelines(llm: LLM) {
-
   // --- Generation ---
 
   /**
@@ -51,9 +56,9 @@ export function createPipelines(llm: LLM) {
   async function generate(payload: PipelineInput, instructions: string) {
     const convo = llm.conversation(prompts.system);
     const text = `${formatInputs(payload)}\n\n${instructions.trim()}`;
-    const images = payload.image ? [{label: "The canvas", dataUrl: payload.image}] : [];
-    const output = await convo.ask({text, images}, SpecOutput);
-    return {convo, ...output};
+    const images = payload.image ? [{ label: 'The canvas', dataUrl: payload.image }] : [];
+    const output = await convo.ask({ text, images }, SpecOutput);
+    return { convo, ...output };
   }
 
   // --- Verification (shared by the new pipelines) ---
@@ -63,8 +68,8 @@ export function createPipelines(llm: LLM) {
    * Errors cover invalid JSON, compile and runtime errors (not fields that aren't columns).
    */
   async function checkSpec(spec: string, columns: ColumnSchema) {
-    const {errors} = await renderSpec(spec, columns);
-    return {errors};
+    const { errors } = await renderSpec(spec, columns);
+    return { errors };
   }
 
   /**
@@ -76,25 +81,33 @@ export function createPipelines(llm: LLM) {
 
     for (let retry = 1; retry <= MAX_COMPILE_RETRIES && check.errors.length; retry++) {
       console.info(`[compileLoop] retry ${retry}:`, check.errors);
-      const text = `${prompts.verify.fixErrors.trim()}\n\n<errors>\n${check.errors.join("\n")}\n</errors>`;
-      ({spec} = await convo.ask({text}, SpecRevision));
+      const text = `${prompts.verify.fixErrors.trim()}\n\n<errors>\n${check.errors.join('\n')}\n</errors>`;
+      ({ spec } = await convo.ask({ text }, SpecRevision));
       check = await checkSpec(spec, columns);
     }
 
-    return {spec, ...check};
+    return { spec, ...check };
   }
 
   /**
    * Asks a separate reviewer whether the spec matches the sketch's structure.
    * The reviewer also sees any chat instruction, since chat takes precedence over the sketch.
    */
-  async function review(opts: { image: string; spec: string; chatMessage?: string | null; columns: ColumnSchema }): Promise<ReviewVerdict> {
-    const text = `${formatInputs({chatMessage: opts.chatMessage, columns: opts.columns})}\n\n<spec>\n${opts.spec}\n</spec>\n\n${prompts.verify.review}`;
-    const verdict = await llm.structured({
-      system: prompts.verify.reviewSystem,
-      text,
-      images: [{label: "The user's sketch", dataUrl: opts.image}]
-    }, ReviewVerdict);
+  async function review(opts: {
+    image: string;
+    spec: string;
+    chatMessage?: string | null;
+    columns: ColumnSchema;
+  }): Promise<ReviewVerdict> {
+    const text = `${formatInputs({ chatMessage: opts.chatMessage, columns: opts.columns })}\n\n<spec>\n${opts.spec}\n</spec>\n\n${prompts.verify.review}`;
+    const verdict = await llm.structured(
+      {
+        system: prompts.verify.reviewSystem,
+        text,
+        images: [{ label: "The user's sketch", dataUrl: opts.image }]
+      },
+      ReviewVerdict
+    );
     return verdict;
   }
 
@@ -102,41 +115,51 @@ export function createPipelines(llm: LLM) {
    * The shared new pipeline: generate with the given instructions, compile with retries, then review if there's an image.
    */
   async function runPipeline(payload: PipelineInput, instructions: string): Promise<SpecResult> {
-
     // 1: Generate
 
-    const {convo, spec: firstSpec, observations} = await generate(payload, instructions);
+    const { convo, spec: firstSpec, observations } = await generate(payload, instructions);
 
     // 2: Compile and run against placeholder data, retrying with the errors
 
     const check = await compileLoop(convo, firstSpec, payload.columns);
     const spec = check.spec;
     if (check.errors.length) {
-      return {spec, observations, errors: check.errors, review: null};
+      return { spec, observations, errors: check.errors, review: null };
     }
 
     // 3: Review the spec against the image (sketch or annotations), only when there is one. The verdict isn't acted on yet.
 
     const verdict = payload.image
-      ? await review({image: payload.image, spec, chatMessage: payload.chatMessage, columns: payload.columns})
+      ? await review({
+          image: payload.image,
+          spec,
+          chatMessage: payload.chatMessage,
+          columns: payload.columns
+        })
       : null;
 
-    return {spec, observations, errors: [], review: verdict};
+    return { spec, observations, errors: [], review: verdict };
   }
 
   /**
    * A new spec on a blank canvas (or over an invalid spec), from a sketch and/or chat
    */
   async function fromScratch(payload: PipelineInput): Promise<SpecResult> {
-    return runPipeline(payload, payload.image ? prompts.fromScratch.withSketch : prompts.fromScratch.withoutSketch);
+    return runPipeline(
+      payload,
+      payload.image ? prompts.fromScratch.withSketch : prompts.fromScratch.withoutSketch
+    );
   }
 
   /**
    * Changes to a rendered chart, from annotations drawn on or beside it (the image is the chart with strokes) and/or chat
    */
   async function refine(payload: PipelineInput): Promise<SpecResult> {
-    return runPipeline(payload, payload.image ? prompts.refine.withSketch : prompts.refine.withoutSketch);
+    return runPipeline(
+      payload,
+      payload.image ? prompts.refine.withSketch : prompts.refine.withoutSketch
+    );
   }
 
-  return {fromScratch, refine};
+  return { fromScratch, refine };
 }
