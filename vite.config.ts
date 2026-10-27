@@ -10,7 +10,7 @@ export default defineConfig({
 				// Plain logic, run in Node
 				extends: true,
 				test: {
-					name: 'server',
+					name: 'unit',
 					include: ['src/**/*.test.ts'],
 					exclude: ['src/**/*.browser.test.ts'],
 					environment: 'node'
@@ -20,7 +20,7 @@ export default defineConfig({
 				// Components and canvas code, run in a real browser (Fabric, Monaco and Vega need one)
         extends: true,
 				test: {
-					name: 'client',
+					name: 'browser',
           include: ['src/**/*.browser.test.ts'],
 					browser: {
 						enabled: true,

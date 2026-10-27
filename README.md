@@ -1,54 +1,16 @@
-## Environment Setup
+# Inkling
 
-This project uses Supabase magic-link authentication and a server-side Anthropic API key for the "Apply Changes" feature.
+**Inkling** is a multimodal visualization authoring tool developed at Cal Poly San Luis Obispo.
+It integrates code editing, chat instructions, and hand-drawn sketching, allowing a user to move between or combine these modalities to create or refine data visualizations.
 
-- Copy `.env.example` to `.env`.
-- Set `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY` from your Supabase project settings.
-- Set `CLAUDE_API_KEY` to your key.
-- Set `ANTHROPIC_WORKSPACE_ID` to your workspace ID.
-- Do not commit `.env`.
+It is a [SvelteKit](https://svelte.dev/docs/kit) web app.
+A user edits a [Vega-Lite](https://vega.github.io/vega-lite/) spec in a code editor, sketches or annotates on a canvas, and/or types instructions in a chat box.
+When they click **Apply Changes**, the server sends those inputs to Claude (Anthropic's language model), which returns an updated spec.
 
-In Supabase Authentication settings, enable the Email provider and add the local and deployed callback URLs:
+We implemented a prototype and ran a short pilot study with visualization novices (presented at EduVIS 2026):
 
-```
-http://localhost:5173/auth/callback
-https://your-domain.example/auth/callback
-```
+- [INKLING: Exploring How Students Design Visualizations with Integrated Sketching, Natural Language, and Code Editing](https://ayaankazerouni.org/papers/2026/eduvis2026inkling.pdf). Sadie M. Fisher, Austin P. Wright, Ayaan M. Kazerouni.
 
-The workspace requires users to sign in with a magic link. Users request a link at `/auth`, then return through the callback URL to enter the workspace.
+![Screenshot of Inkling](inkling.png)
 
-## Running the project
-
-To start a development server, run this command from the root directory:
-
-```sh
-npm run dev
-```
-
-Or, if you want to visit the site from a different device:
-
-```sh
-npm run dev -- --host
-```
-
-## Logging requests
-
-To log a session, start the dev server with a label:
-
-```sh
-EVAL_RECORD=baseline npm run dev
-```
-
-Each request you make in the app is saved to `eval/runs/<timestamp>-baseline/`, one folder per request: `input.json`, the canvas image, and `result.json` with the model's observations and the resulting spec. `index.html` in the run folder shows every request side by side and is updated after each one.
-
-## Building
-
-To create a production version of your app:
-
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+To set up the project, run it locally, or contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
