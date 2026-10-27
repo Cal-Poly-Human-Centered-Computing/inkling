@@ -592,6 +592,17 @@ $: if (fabricCanvas && fabricCanvas.freeDrawingBrush) {
 		return !!fabricCanvas?.getObjects?.().length;
 	}
 
+	/** Bounding box of each canvas object as it appears on screen, in CSS pixels from the canvas's top-left corner. */
+	export function canvasObjectScreenBounds() {
+		if (!fabricCanvas) return [];
+		return fabricCanvas.getObjects().map((obj: any) => {
+			const corners = obj.getCoords().map((p: any) => p.transform(fabricCanvas.viewportTransform));
+			const xs = corners.map((p: any) => p.x);
+			const ys = corners.map((p: any) => p.y);
+			return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
+		});
+	}
+
 	export function renderedVisPresent() {
 		return !!baseSvg;
 	}
