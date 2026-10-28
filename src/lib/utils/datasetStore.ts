@@ -1,6 +1,7 @@
 // Helpers for persisting datasets (arrays of row objects) to localStorage and reading them back.
 
 import { autoType } from 'd3-dsv';
+import { summarizeDataset, type DatasetSummary } from './datasetSummary';
 
 /**
  * The `data` of the editor's spec header: the URL of a URL dataset, or the id of a dataset with stored rows (bound
@@ -28,10 +29,12 @@ export type PersistedDataset = {
 };
 
 // Each dataset is stored under a short generated id: metadata at `app:dataset:<id>`, rows (datasets without a URL
-// only) at `app:dataset:<id>:rows`. Separate keys mean reading the metadata never parses the rows.
+// only) at `app:dataset:<id>:rows`, and the preview's column summary at `app:dataset:<id>:summary`. Separate keys
+// mean reading the metadata never parses the rows or the summary.
 const PREFIX = 'app:dataset:';
 const metaKey = (id: string) => `${PREFIX}${id}`;
 const rowsKey = (id: string) => `${PREFIX}${id}:rows`;
+const summaryKey = (id: string) => `${PREFIX}${id}:summary`;
 
 function isBrowser() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -49,7 +52,7 @@ function readJson<T>(key: string): T | null {
   }
 }
 
-/** Ids of all stored datasets (skips rows keys). */
+/** Ids of all stored datasets (skips rows and summary keys). */
 function listDatasetIds(): string[] {
   if (!isBrowser()) return [];
   const ids: string[] = [];
@@ -93,10 +96,11 @@ function readCurrent(): { id: string; meta: PersistedDataset } | null {
   return current;
 }
 
-/** Removes a dataset's metadata and rows. */
+/** Removes a dataset's metadata, rows and summary. */
 function removeDataset(id: string) {
   writeJson(metaKey(id), null);
   writeJson(rowsKey(id), null);
+  writeJson(summaryKey(id), null);
 }
 
 // An ISO date followed by a space and a time; the space is swapped for the "T" autoType expects
@@ -161,7 +165,8 @@ function writeJson(key: string, value: unknown): boolean {
 /**
  * Persist a dataset's column names and estimated types to localStorage, plus either its source URL or its rows,
  * under a new id. Replaces the previously stored dataset. `name` is a display name, e.g. the uploaded file's name.
- * Rows of a URL dataset are only used to estimate types and aren't kept: the chart loads them from the URL.
+ * Rows of a URL dataset are only used to estimate types and summarise the columns, and aren't kept: the chart loads
+ * them from the URL.
  * Returns false if nothing was stored; the previously stored dataset is then left as it was.
  *
  * Note: localStorage has size limits (~5MB). For larger datasets consider using IndexedDB.
@@ -174,18 +179,24 @@ export function setDataset(
   if (!isBrowser()) return false;
   if (!data?.length && !url) return false;
 
+  const schema = columns?.length ? estimateSchema(columns, data ?? []) : undefined;
   const payload: PersistedDataset = {
     url: url ?? undefined,
     name: name ?? undefined,
     columns: columns?.length ? columns : undefined,
-    schema: columns?.length ? estimateSchema(columns, data ?? []) : undefined,
+    schema,
     timestamp: Date.now()
   };
+  const summary = summarizeDataset(data ?? [], schema ?? []);
 
   const previous = listDatasetIds();
   const id = newId();
-  // rows first, so a failed (too large) write never leaves metadata without its rows
-  if ((!url && !writeJson(rowsKey(id), data)) || !writeJson(metaKey(id), payload)) {
+  // rows and summary before metadata, so a failed (too large) write never leaves metadata without them
+  if (
+    (!url && !writeJson(rowsKey(id), data)) ||
+    !writeJson(summaryKey(id), summary) ||
+    !writeJson(metaKey(id), payload)
+  ) {
     removeDataset(id);
     return false;
   }
@@ -216,9 +227,21 @@ export function readPersistedDataset(): PersistedDataset | null {
   return readCurrent()?.meta ?? null;
 }
 
+export function readDataset(id: string): PersistedDataset | null {
+  const dataset = listDatasetIds().find((did) => did === id);
+  return dataset === undefined ? null : readJson(metaKey(id));
+}
+
+/** The column summary computed when the dataset was stored, for the preview page; null for an unknown id. */
+export function getSummary(id: string): DatasetSummary | null {
+  return readJson<DatasetSummary>(summaryKey(id));
+}
+
 // Exports summary:
 // - setDataset(data, columns, { url?, name? })
 // - clearDatasetStore()
 // - readPersistedDataset()
 // - getRows()
 // - getColumnSchema()
+// - readDataset(id)
+// - getSummary(id)
