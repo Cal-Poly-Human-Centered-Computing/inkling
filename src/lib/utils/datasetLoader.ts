@@ -1,4 +1,4 @@
-// Utilities for loading CSV/JSON datasets from a URL into plain arrays of row objects.
+// Utilities for loading CSV/JSON datasets from a URL or a file into plain arrays of row objects.
 
 import { csvParse, autoType } from 'd3-dsv';
 
@@ -55,22 +55,38 @@ export async function loadDatasetFromUrl(url: string): Promise<LoadedDataset> {
     throw new Error(`Could not read file from URL\n\t${url}`);
   }
 
-  // helper to detect extension
-  const urlLower = url.split('?')[0].toLowerCase();
-  const ext = urlLower.endsWith('.csv') ? 'csv' : urlLower.endsWith('.json') ? 'json' : undefined;
-  const contentType = res.headers.get('Content-Type') ?? '';
+  // the body can only be read once, so read it as text and parse from that
+  const type = detectType(url.split('?')[0], res.headers.get('Content-Type') ?? '');
+  return parseDataset(await res.text(), type, `URL:\n\t${url}`);
+}
 
-  const type =
-    ext === 'csv' || contentType.includes('csv')
-      ? 'csv'
-      : ext === 'json' || contentType.includes('json')
-        ? 'json'
-        : undefined;
+/**
+ * Load a CSV or JSON file (e.g. from a file input) into an array of objects and a list of column names.
+ * The type comes from the file's extension or MIME type, as for {@link loadDatasetFromUrl}.
+ */
+export async function loadDatasetFromFile(file: File): Promise<LoadedDataset> {
+  return parseDataset(await file.text(), detectType(file.name, file.type), `file ${file.name}`);
+}
 
+/** CSV or JSON, from a path's extension or else a MIME type; undefined if neither says. */
+function detectType(path: string, mimeType: string): 'csv' | 'json' | undefined {
+  const lower = path.toLowerCase();
+  if (lower.endsWith('.csv') || mimeType.includes('csv')) return 'csv';
+  if (lower.endsWith('.json') || mimeType.includes('json')) return 'json';
+  return undefined;
+}
+
+/**
+ * Parse CSV (with d3.autoType) or JSON text into rows and columns. With no type, tries JSON, then CSV.
+ * `source` names where the text came from, for error messages.
+ */
+function parseDataset(
+  text: string,
+  type: 'csv' | 'json' | undefined,
+  source: string
+): LoadedDataset {
   let data;
   try {
-    // the body can only be read once, so read it as text and parse from that
-    const text = await res.text();
     if (type === 'csv') {
       data = csvParse(text, autoType);
     } else if (type === 'json') {
@@ -85,16 +101,16 @@ export async function loadDatasetFromUrl(url: string): Promise<LoadedDataset> {
       }
     }
   } catch (err) {
-    throw new Error(`Failed to parse data. Expected CSV or JSON-formatted data at URL:\n\t${url}`);
+    throw new Error(`Failed to parse data. Expected CSV or JSON-formatted data at ${source}`, {
+      cause: err
+    });
   }
 
   if (!isRecordArray(data)) {
-    throw new Error(`Expected a non-empty array of row objects at \n\t${url}`);
+    throw new Error(`Expected a non-empty array of row objects at ${source}`);
   }
 
-  const columns = extractColumns(data);
-
-  return { data, columns };
+  return { data, columns: extractColumns(data) };
 }
 
 /**

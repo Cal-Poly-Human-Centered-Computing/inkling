@@ -2,12 +2,14 @@
 
 import { autoType } from 'd3-dsv';
 
-export function getDataToken(): any {
-  const dataset = readRaw();
-  if (!dataset) return null;
-
-  // TODO: eventually, also account for if a csv was uploaded
-  return dataset?.url ? { url: dataset.url } : null;
+/**
+ * The `data` of the editor's spec header: the URL of a URL dataset, or the id of a dataset with stored rows (bound
+ * to the spec by that name at render time). Null when no dataset is stored.
+ */
+export function getDataToken(): { url: string } | { name: string } | null {
+  const current = readCurrent();
+  if (!current) return null;
+  return current.meta.url ? { url: current.meta.url } : { name: current.id };
 }
 
 export type ColumnType = 'quantitative' | 'temporal' | 'nominal' | 'ordinal';
@@ -19,14 +21,17 @@ export type ColumnSchema = { name: string; type: ColumnType }[];
 // Metadata about the dataset; small, so it's cheap to read on every request
 export type PersistedDataset = {
   url?: string;
+  name?: string; // display name, e.g. the uploaded file's name
   columns?: string[];
   schema?: ColumnSchema; // estimated once, when the dataset is stored
   timestamp?: number;
 };
 
-// Metadata and rows are stored under separate keys so reading the metadata never parses the rows
-const STORAGE_KEY = 'app:dataset';
-const ROWS_KEY = 'app:dataset:rows';
+// Each dataset is stored under a short generated id: metadata at `app:dataset:<id>`, rows (datasets without a URL
+// only) at `app:dataset:<id>:rows`. Separate keys mean reading the metadata never parses the rows.
+const PREFIX = 'app:dataset:';
+const metaKey = (id: string) => `${PREFIX}${id}`;
+const rowsKey = (id: string) => `${PREFIX}${id}:rows`;
 
 function isBrowser() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -44,8 +49,54 @@ function readJson<T>(key: string): T | null {
   }
 }
 
-function readRaw(): PersistedDataset | null {
-  return readJson<PersistedDataset>(STORAGE_KEY);
+/** Ids of all stored datasets (skips rows keys). */
+function listDatasetIds(): string[] {
+  if (!isBrowser()) return [];
+  const ids: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key?.startsWith(PREFIX)) {
+      continue;
+    }
+
+    const id = key.slice(PREFIX.length);
+    if (id && !id.includes(':')) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
+function newId(): string {
+  const taken = new Set(listDatasetIds());
+  let id;
+  do {
+    id = crypto.randomUUID().slice(0, 8);
+  } while (taken.has(id));
+  return id;
+}
+
+/**
+ * The stored dataset's id and metadata. Only one dataset is kept, but if a replace was interrupted before the old
+ * one was removed, the newest wins.
+ */
+function readCurrent(): { id: string; meta: PersistedDataset } | null {
+  let current: { id: string; meta: PersistedDataset } | null = null;
+
+  // Find the most recent stored dataset
+  for (const id of listDatasetIds()) {
+    const meta = readJson<PersistedDataset>(metaKey(id));
+    if (meta && (!current || (meta.timestamp ?? 0) > (current.meta.timestamp ?? 0))) {
+      current = { id, meta };
+    }
+  }
+  return current;
+}
+
+/** Removes a dataset's metadata and rows. */
+function removeDataset(id: string) {
+  writeJson(metaKey(id), null);
+  writeJson(rowsKey(id), null);
 }
 
 // An ISO date followed by a space and a time; the space is swapped for the "T" autoType expects
@@ -87,17 +138,7 @@ function estimateSchema(columns: string[], data: Record<string, any>[]): ColumnS
  * sent to the server/LLM; the rows themselves stay on the client.
  */
 export function getColumnSchema(): ColumnSchema {
-  const payload = readRaw();
-  if (!payload) return [];
-  if (payload.schema) return payload.schema;
-
-  // Datasets stored in the old format kept their rows in the metadata and had no schema. Estimate the schema once
-  // and save it, dropping the rows: they were only ever URL datasets, whose rows aren't kept.
-  const { data, ...metadata } = payload as PersistedDataset & { data?: Record<string, any>[] };
-  if (!data?.length || !metadata.columns?.length) return [];
-  const schema = estimateSchema(metadata.columns, data);
-  writeJson(STORAGE_KEY, { ...metadata, schema });
-  return schema;
+  return readCurrent()?.meta.schema ?? [];
 }
 
 // Stores the value under the key, or removes the key when the value is null. Returns false if the write failed
@@ -118,34 +159,45 @@ function writeJson(key: string, value: unknown): boolean {
 }
 
 /**
- * Persist a dataset's column names and estimated types to localStorage, plus either its source URL or its rows.
+ * Persist a dataset's column names and estimated types to localStorage, plus either its source URL or its rows,
+ * under a new id. Replaces the previously stored dataset. `name` is a display name, e.g. the uploaded file's name.
  * Rows of a URL dataset are only used to estimate types and aren't kept: the chart loads them from the URL.
  * Returns false if nothing was stored; the previously stored dataset is then left as it was.
  *
  * Note: localStorage has size limits (~5MB). For larger datasets consider using IndexedDB.
  */
-export function setDataset(data: Record<string, any>[], columns: string[], url?: string): boolean {
+export function setDataset(
+  data: Record<string, any>[],
+  columns: string[],
+  { url, name }: { url?: string; name?: string } = {}
+): boolean {
   if (!isBrowser()) return false;
   if (!data?.length && !url) return false;
 
   const payload: PersistedDataset = {
     url: url ?? undefined,
+    name: name ?? undefined,
     columns: columns?.length ? columns : undefined,
     schema: columns?.length ? estimateSchema(columns, data ?? []) : undefined,
     timestamp: Date.now()
   };
 
-  // rows first, so a failed (too large) write doesn't leave new metadata alongside the old dataset's rows
-  if (!writeJson(ROWS_KEY, url ? null : data)) return false;
-  return writeJson(STORAGE_KEY, payload);
+  const previous = listDatasetIds();
+  const id = newId();
+  // rows first, so a failed (too large) write never leaves metadata without its rows
+  if ((!url && !writeJson(rowsKey(id), data)) || !writeJson(metaKey(id), payload)) {
+    removeDataset(id);
+    return false;
+  }
+  previous.forEach(removeDataset);
+  return true;
 }
 
 /**
  * Clear any persisted dataset from localStorage
  */
 export function clearDatasetStore() {
-  writeJson(STORAGE_KEY, null);
-  writeJson(ROWS_KEY, null);
+  listDatasetIds().forEach(removeDataset);
 }
 
 /**
@@ -153,18 +205,19 @@ export function clearDatasetStore() {
  * call this where the rows are actually needed.
  */
 export function getRows(): Record<string, any>[] | null {
-  return readJson<Record<string, any>[]>(ROWS_KEY);
+  const current = readCurrent();
+  return current ? readJson<Record<string, any>[]>(rowsKey(current.id)) : null;
 }
 
 /**
  * Read the persisted metadata (no rows). Useful for quick inspection or partial restores.
  */
 export function readPersistedDataset(): PersistedDataset | null {
-  return readRaw();
+  return readCurrent()?.meta ?? null;
 }
 
 // Exports summary:
-// - setDataset(data, columns, url?)
+// - setDataset(data, columns, { url?, name? })
 // - clearDatasetStore()
 // - readPersistedDataset()
 // - getRows()

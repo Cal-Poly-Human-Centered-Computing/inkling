@@ -5,6 +5,7 @@ import { get } from 'svelte/store';
 import 'bulma/css/bulma.min.css';
 import '../app.css';
 import { code } from '$lib/stores/code';
+import { getRows } from '$lib/utils/datasetStore';
 import { mockApplyChanges, mountPage } from '../test/pageHelpers';
 import Page from './+page.svelte';
 
@@ -42,11 +43,12 @@ async function addTextbox(screen: Awaited<ReturnType<typeof mountPage>>) {
     .click({ position: { x: 200, y: 300 } });
 }
 
-// `code` is a global store and `fetch` may be mocked, so reset both
+// `code` is a global store, `fetch` may be mocked and an attached dataset persists in localStorage, so reset all three
 afterEach(() => {
   restoreFetch?.();
   restoreFetch = undefined;
   code.set('');
+  localStorage.clear();
 });
 
 test('the page mounts with the editor, chat input and canvas', async () => {
@@ -154,4 +156,18 @@ test('rolling back restores the spec and canvas from before Apply', async () => 
 
   await expect.poll(() => get(code)).toContain('"point"');
   await expect.poll(() => lowerCanvas.classList.contains('is-active')).toBe(true);
+});
+
+test('attaching a CSV file stores its rows and names it in the spec', async () => {
+  const screen = await mountPage();
+
+  await screen.getByRole('button', { name: 'Attach dataset' }).click();
+  await screen.getByLabelText('Choose dataset source').selectOptions('file');
+  await screen
+    .getByLabelText('JSON/CSV file')
+    .upload(new File(['a,b\n1,2\n2,3'], 'points.csv', { type: 'text/csv' }));
+  await screen.getByRole('button', { name: 'Attach', exact: true }).click();
+
+  await expect.poll(() => get(code)).toMatch(/"data":\s*\{\s*"name"/);
+  expect(getRows()).toHaveLength(2);
 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { csvParse } from 'd3-dsv';
-import { extractColumns, loadDatasetFromUrl } from './datasetLoader';
+import { extractColumns, loadDatasetFromFile, loadDatasetFromUrl } from './datasetLoader';
 
 describe('extractColumns', () => {
   it('uses the columns field from csvParse output', () => {
@@ -105,5 +105,14 @@ describe('loadDatasetFromUrl', () => {
     await expect(loadDatasetFromUrl('https://example.com/data.json')).rejects.toThrow(
       'non-empty array of row objects'
     );
+  });
+});
+
+describe('loadDatasetFromFile', () => {
+  it('parses a CSV file with autoType', async () => {
+    const file = new File(['name,value\nA,1\nB,2.5'], 'data.csv', { type: 'text/csv' });
+    const { data, columns } = await loadDatasetFromFile(file);
+    expect(columns).toEqual(['name', 'value']);
+    expect(data[1].value).toBe(2.5);
   });
 });

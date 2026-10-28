@@ -1,7 +1,7 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { faDatabase } from '@fortawesome/free-solid-svg-icons';
-  import { loadDatasetFromUrl as loadDatasetFromUrlHelper } from '$lib/utils/datasetLoader';
+  import { loadDatasetFromFile, loadDatasetFromUrl } from '$lib/utils/datasetLoader';
   import { setDataset } from '$lib/utils/datasetStore';
   import { createEventDispatcher, onDestroy } from 'svelte';
 
@@ -18,6 +18,8 @@
   let datasetFile: File | null = null;
   let datasetFileInput: HTMLInputElement | null = null;
   let datasetUrl: string = '';
+  // why the last attach failed, shown in the modal
+  let datasetError: string | null = null;
 
   // dataset help popover state
   let showDatasetHelp = false;
@@ -56,6 +58,7 @@
     datasetMode = 'url';
     datasetFile = null;
     datasetUrl = '';
+    datasetError = null;
     showDatasetModal = true;
     setTimeout(() => datasetFileInput?.focus(), 0);
   }
@@ -72,32 +75,43 @@
   // 	document.removeEventListener('mousedown', handleDocClick);
   // }
 
+  /**
+   * Loads the chosen file or URL, stores it, and tells the page with `datasetAttached`. On failure the modal stays
+   * open with the error.
+   */
   async function attachDataset() {
     // close any help popover when confirming
     showDatasetHelp = false;
     document.removeEventListener('mousedown', handleDocClick);
-    if (datasetMode === 'file' && datasetFile) {
-      dispatch('attachDataset', { kind: 'file', file: datasetFile });
-      showDatasetModal = false;
-    } else if (datasetMode === 'url' && datasetUrl.trim()) {
-      datasetUrl = datasetUrl.trim();
-      try {
-        const res = await loadDatasetFromUrlHelper(datasetUrl);
-        console.log('Dataset loaded via helper:', res);
-
-        setDataset(res.data, res.columns, datasetUrl);
-
-        dispatch('datasetAttached');
-      } catch (err) {
-        console.error('Failed to load dataset via helper:', err);
+    datasetError = null;
+    try {
+      let stored: boolean;
+      if (datasetMode === 'file' && datasetFile) {
+        const res = await loadDatasetFromFile(datasetFile);
+        stored = setDataset(res.data, res.columns, { name: datasetFile.name });
+      } else if (datasetMode === 'url' && datasetUrl.trim()) {
+        datasetUrl = datasetUrl.trim();
+        const res = await loadDatasetFromUrl(datasetUrl);
+        stored = setDataset(res.data, res.columns, { url: datasetUrl });
+      } else {
+        return;
       }
+      if (!stored) {
+        datasetError = 'The dataset is too large to store in the browser.';
+        return;
+      }
+      dispatch('datasetAttached');
       showDatasetModal = false;
+    } catch (err) {
+      console.error('Failed to load dataset:', err);
+      datasetError = err instanceof Error ? err.message : String(err);
     }
   }
 
   function cancelDataset() {
     datasetFile = null;
     datasetUrl = '';
+    datasetError = null;
     // ensure help popover closed when cancelling
     showDatasetHelp = false;
     document.removeEventListener('mousedown', handleDocClick);
@@ -172,7 +186,7 @@
                 bind:value={datasetMode}
                 aria-label="Choose dataset source"
               >
-                <!--								<option value="file">Upload CSV file</option>-->
+                <option value="file">JSON or CSV file</option>
                 <option value="url">URL</option>
               </select>
             </div>
@@ -193,8 +207,7 @@
                 aria-live="polite"
               >
                 <p style="margin:0; font-size:0.9rem;">
-                  Only CSV column names (not data values) are sent to the AI server to build the
-                  Vega-Lite specifications.
+                 Data never leaves the browser's local storage. Only column names and data types are sent to an AI model to aid in generating a visualization specification. 
                 </p>
               </div>
             {/if}
@@ -203,14 +216,14 @@
 
         {#if datasetMode === 'file'}
           <div class="field">
-            <label class="label" for="dataset-file-input">CSV file</label>
+            <label class="label" for="dataset-file-input">JSON/CSV file</label>
             <div class="control">
               <input
                 id="dataset-file-input"
                 bind:this={datasetFileInput}
                 class="input"
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,text/csv,.json,application/json"
                 on:change={onDatasetFileChange}
               />
             </div>
@@ -234,6 +247,9 @@
               You can use public URLs like https://vega.github.io/vega-datasets/data/cars.json
             </p>
           </div>
+        {/if}
+        {#if datasetError}
+          <p class="help is-danger" role="alert" style="white-space: pre-line;">{datasetError}</p>
         {/if}
       </section>
       <footer class="modal-card-foot">

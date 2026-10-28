@@ -30,6 +30,7 @@
   // Decorations added to indicate server-returned changes (cleared on next local edit)
   let serverChangeDecorationIds: string[] = [];
   type RemovedChunkInfo = { anchorLine: number; lineCount: number; text: string };
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- only read in Monaco handlers, never rendered
   let removedDecorationById = new Map<string, RemovedChunkInfo>();
   let removedLinesOverlay: { anchorLine: number; lineCount: number; text: string } | null = null;
   let removedOverlayWidget: Monaco.editor.IContentWidget | null = null;
@@ -50,6 +51,7 @@
     let newLine = 1;
 
     const decos: import('monaco-editor').editor.IModelDeltaDecoration[] = [];
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- scratch map local to this call, never rendered
     const removedMetaByNewIndex = new Map<number, RemovedChunkInfo>();
 
     const getLineCount = (value: string): number => {
@@ -411,8 +413,8 @@
     // save the current spec in case the user rolls back the applied changes
     specHistory.push(editorView?.getModel()?.getValue() ?? String(get(codeStore) || ''));
 
-    let finalObj: any = null;
-    let finalString = '';
+    let finalObj;
+    let finalString;
 
     try {
       const parsed = JSON.parse(newCode);

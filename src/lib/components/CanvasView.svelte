@@ -12,6 +12,7 @@
     type FabricNavigationController
   } from '$lib/utils/fabricNavigation';
   import { flipInk } from '$lib/utils/ink';
+  import { getDataToken, getRows } from '$lib/utils/datasetStore';
 
   // Fabric.js canvas references
   let fabricCanvas: any = null;
@@ -170,6 +171,20 @@
       // TODO: instead of just logging it, show the user the syntax error
       console.log(err);
       specObj = {};
+    }
+
+    // a stored dataset is referenced by name in the spec; its rows are bound here, so they never enter the editor
+    const token = getDataToken();
+    if (token && 'name' in token) {
+      const rows = getRows();
+      if (rows)
+        specObj = {
+          ...specObj,
+          datasets: {
+            ...specObj.datasets,
+            [token.name]: rows
+          }
+        };
     }
 
     try {
@@ -758,8 +773,9 @@
       if (/taint|security|cross-origin|domexception/i.test(msg)) {
         throw new Error(
           'exportCanvasDataUrl: export failed due to cross-origin-tainted canvas. Ensure all images/resources are served with CORS headers or are inlined. Original error: ' +
-            msg
-            , { cause: err } );
+            msg,
+          { cause: err }
+        );
       }
       throw new Error('exportCanvasDataUrl: failed to export - ' + msg, { cause: err });
     }

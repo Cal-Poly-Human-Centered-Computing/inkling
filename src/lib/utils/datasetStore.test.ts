@@ -25,7 +25,7 @@ describe('persistence', () => {
   ];
 
   it('stores the url, columns and types of a URL dataset, but not its rows', () => {
-    setDataset(rows, ['a', 'b'], 'https://example.com/data.csv');
+    setDataset(rows, ['a', 'b'], { url: 'https://example.com/data.csv' });
     expect(getColumnSchema()).toEqual([
       { name: 'a', type: 'nominal' },
       { name: 'b', type: 'quantitative' }
@@ -43,26 +43,30 @@ describe('persistence', () => {
     // metadata is read on every request, so it must stay small however many rows the dataset has
     const many = Array.from({ length: 10_000 }, (_, i) => ({ a: `row ${i}`, b: i }));
     setDataset(many, ['a', 'b']);
-    expect(localStorage.getItem('app:dataset')!.length).toBeLessThan(1000);
+    const { name } = getDataToken() as { name: string };
+    expect(localStorage.getItem(`app:dataset:${name}`)!.length).toBeLessThan(1000);
   });
 
   it('clears the stored rows when a URL dataset replaces a file dataset', () => {
     setDataset(rows, ['a', 'b']);
-    setDataset(rows, ['a', 'b'], 'https://example.com/data.csv');
+    setDataset(rows, ['a', 'b'], { url: 'https://example.com/data.csv' });
     expect(getRows()).toBeNull();
   });
 
   it('leaves the previous dataset in place when the rows are too big to store', () => {
-    setDataset(rows, ['a', 'b'], 'https://example.com/data.csv');
+    setDataset(rows, ['a', 'b'], { url: 'https://example.com/data.csv' });
 
     // a localStorage whose rows key is over quota; happy-dom's localStorage is a proxy that can't be spied on
     const real = localStorage;
     vi.stubGlobal('localStorage', {
+      get length() {
+        return real.length;
+      },
+      key: (i: number) => real.key(i),
       getItem: (key: string) => real.getItem(key),
       removeItem: (key: string) => real.removeItem(key),
       setItem: (key: string, value: string) => {
-        if (key === 'app:dataset:rows')
-          throw new DOMException('quota exceeded', 'QuotaExceededError');
+        if (key.endsWith(':rows')) throw new DOMException('quota exceeded', 'QuotaExceededError');
         real.setItem(key, value);
       }
     });
@@ -72,9 +76,10 @@ describe('persistence', () => {
     expect(getRows()).toBeNull();
   });
 
-  it('has no data token without a url', () => {
-    setDataset(rows, ['a', 'b']);
-    expect(getDataToken()).toBeNull();
+  it('names the dataset in the data token when it has no url', () => {
+    setDataset(rows, ['a', 'b'], { name: 'cars.csv' });
+    expect(getDataToken()).toEqual({ name: expect.any(String) });
+    expect(readPersistedDataset()?.name).toBe('cars.csv');
   });
 
   it('ignores an empty dataset with no url', () => {
@@ -92,13 +97,14 @@ describe('persistence', () => {
   });
 
   it('treats corrupted storage as empty instead of throwing', () => {
-    localStorage.setItem('app:dataset', '{not json');
+    localStorage.setItem('app:dataset:abc', '{not json');
     expect(readPersistedDataset()).toBeNull();
     expect(getColumnSchema()).toEqual([]);
   });
 
   it('treats corrupted rows as missing instead of throwing', () => {
-    localStorage.setItem('app:dataset:rows', '{not json');
+    localStorage.setItem('app:dataset:abc', JSON.stringify({ columns: ['a'] }));
+    localStorage.setItem('app:dataset:abc:rows', '{not json');
     expect(getRows()).toBeNull();
   });
 });
@@ -123,37 +129,6 @@ describe('getColumnSchema', () => {
     // csvParse with autoType produces Date objects
     setDataset([{ date: new Date(2020, 0, 15) }, { date: new Date(2020, 1, 15) }], ['date']);
     expect(getColumnSchema()).toEqual([{ name: 'date', type: 'temporal' }]);
-  });
-
-  describe('datasets stored in the old format (rows in the metadata, no schema)', () => {
-    const old = {
-      url: 'https://example.com/data.csv',
-      columns: ['n', 's'],
-      data: [
-        { n: 1, s: 'a' },
-        { n: 2, s: 'b' }
-      ]
-    };
-    const schema = [
-      { name: 'n', type: 'quantitative' },
-      { name: 's', type: 'nominal' }
-    ];
-
-    it('estimates the schema from the stored rows', () => {
-      localStorage.setItem('app:dataset', JSON.stringify(old));
-      expect(getColumnSchema()).toEqual(schema);
-    });
-
-    it('saves the estimated schema and drops the rows from the metadata', () => {
-      localStorage.setItem('app:dataset', JSON.stringify(old));
-      getColumnSchema();
-      expect(readPersistedDataset()).toEqual({ url: old.url, columns: old.columns, schema });
-    });
-
-    it('returns no schema when there are no rows to estimate from', () => {
-      localStorage.setItem('app:dataset', JSON.stringify({ url: old.url, columns: old.columns }));
-      expect(getColumnSchema()).toEqual([]);
-    });
   });
 });
 
