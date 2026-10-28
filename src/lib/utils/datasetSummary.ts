@@ -9,7 +9,7 @@ import type { ColumnSchema, ColumnType } from './datasetStore';
 /** Roughly how many bins quantitative and temporal histograms get; d3 picks round bin edges near this count. */
 const BIN_COUNT = 20;
 /** Number of most frequent values kept for nominal and ordinal columns; the rest are counted as `other`. */
-const TOP_K = 10;
+export const TOP_K = 10;
 
 /** A histogram bin over [start, end); the last bin includes `end`. Temporal bins are in epoch milliseconds. */
 export type Bin = { start: number; end: number; count: number };
