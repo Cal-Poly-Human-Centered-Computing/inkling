@@ -227,6 +227,26 @@ export function readPersistedDataset(): PersistedDataset | null {
   return readCurrent()?.meta ?? null;
 }
 
+/** The current dataset's id and metadata, or null when none is stored. The id links to its preview page. */
+export function readCurrentDataset(): { id: string; meta: PersistedDataset } | null {
+  return readCurrent();
+}
+
+/** A name to show for a dataset: the uploaded file's name, or the last part of its URL's path. */
+export function datasetDisplayName(meta: PersistedDataset): string {
+  if (meta.name) return meta.name;
+  if (meta.url) {
+    try {
+      const segment = new URL(meta.url).pathname.split('/').filter(Boolean).at(-1);
+      if (segment) return decodeURIComponent(segment);
+    } catch {
+      // not an absolute URL; fall through to the whole string
+    }
+    return meta.url;
+  }
+  return 'Dataset';
+}
+
 export function readDataset(id: string): PersistedDataset | null {
   const dataset = listDatasetIds().find((did) => did === id);
   return dataset === undefined ? null : readJson(metaKey(id));
@@ -243,5 +263,7 @@ export function getSummary(id: string): DatasetSummary | null {
 // - readPersistedDataset()
 // - getRows()
 // - getColumnSchema()
+// - readCurrentDataset()
+// - datasetDisplayName(meta)
 // - readDataset(id)
 // - getSummary(id)

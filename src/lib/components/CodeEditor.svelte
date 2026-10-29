@@ -7,6 +7,7 @@
   import { get } from 'svelte/store';
   import type * as Monaco from 'monaco-editor';
   import { getDataToken, type PersistedDataset } from '$lib/utils/datasetStore';
+  import { loadSavedSpecBody, saveSpecBody } from '$lib/utils/savedSpec';
   import constrainedEditor from 'constrained-editor-plugin';
   import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
   import JsonWorker from 'monaco-editor/language/json/json.worker?worker';
@@ -41,6 +42,9 @@
   let data: PersistedDataset | null = null;
 
   let specHistory: string[] = [];
+
+  /** Stops saving the spec to localStorage; set once the editor has restored the saved spec. */
+  let unsubscribeSave: (() => void) | null = null;
 
   function applyServerDiffDecorations(prevText: string, newText: string) {
     if (!editorModel || !monaco) return;
@@ -219,12 +223,28 @@
     dispatch('copied');
   }
 
-  function getReadonlyText() {
+  /**
+   * The editor text for the current dataset: the read-only header, then `body` (the editable part; a blank,
+   * indented line by default), then the closing brace.
+   */
+  function getReadonlyText(body = '  ') {
     let str = JSON.stringify({ $schema: schema, data: data }, null, '  ');
 
-    str = str.slice(0, -2) + ',\n  \n}'; // remove closing brace and re-add with extra space for user edits
+    str = str.slice(0, -2) + ',\n' + body + '\n}'; // remove closing brace and re-add after the editable part
 
     return str;
+  }
+
+  /**
+   * The editable part of `text` (between the read-only header and the closing brace), or null if `text` doesn't
+   * start with the current header, e.g. a store reset that isn't editor content.
+   */
+  function editableBody(text: string): string | null {
+    const lines = text.split('\n');
+    const header = getReadonlyText().split('\n').slice(0, headerLineCount());
+    if (lines.length < header.length + 1 || header.some((line, i) => lines[i] !== line))
+      return null;
+    return lines.slice(header.length, -1).join('\n');
   }
 
   /** Number of read-only header lines at the top of the editor; depends on how many lines the dataset's `data` takes. */
@@ -361,10 +381,11 @@
     }
   }
 
-  async function initializeEditor() {
+  /** Recreates the editor with the current dataset's header and `body` as the editable part (blank by default). */
+  async function initializeEditor(body?: string) {
     disposeEditor();
 
-    const initialContents = getReadonlyText();
+    const initialContents = getReadonlyText(body);
 
     codeStore.set(initialContents);
     specHistory.push(initialContents);
@@ -378,7 +399,13 @@
 
     data = getDataToken();
 
-    await initializeEditor();
+    // restore the spec from before the editor was last unmounted (e.g. a visit to the dataset preview)
+    await initializeEditor(loadSavedSpecBody() ?? undefined);
+    // subscribed only now, so the store's initial value never overwrites the saved spec
+    unsubscribeSave = codeStore.subscribe((text) => {
+      const body = editableBody(text);
+      if (body !== null) saveSpecBody(body);
+    });
     document.addEventListener('pointerdown', handleRemovedOverlayOutsidePointerDown);
 
     editorMounted = true;
@@ -511,6 +538,7 @@
   }
 
   onDestroy(() => {
+    unsubscribeSave?.();
     if (typeof document !== 'undefined') {
       document.removeEventListener('pointerdown', handleRemovedOverlayOutsidePointerDown);
     }
