@@ -56,6 +56,28 @@ test('ctrl+wheel zooms in about the cursor, keeping the point under it fixed', (
   expect(after.y).toBeCloseTo(before.y);
 });
 
+test('zooming out never goes below 0.5x', () => {
+  setUp();
+
+  for (let i = 0; i < 20; i += 1) {
+    navigation.zoomOut();
+  }
+  expect(canvas.getZoom()).toBe(0.5);
+
+  const rect = canvas.upperCanvasEl.getBoundingClientRect();
+  canvas.upperCanvasEl.dispatchEvent(
+    new WheelEvent('wheel', {
+      clientX: rect.left + 200,
+      clientY: rect.top + 150,
+      deltaY: 1000,
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true
+    })
+  );
+  expect(canvas.getZoom()).toBe(0.5);
+});
+
 /** Dispatches a pointer event on the canvas at a point given in canvas-element coordinates. */
 function pointer(type: string, at: Point) {
   const rect = canvas.upperCanvasEl.getBoundingClientRect();

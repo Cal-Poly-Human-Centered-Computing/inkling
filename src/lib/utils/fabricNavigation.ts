@@ -1,7 +1,7 @@
 import { Canvas, Point } from 'fabric';
 
-const DEFAULT_MIN_ZOOM = 0.01;
-const DEFAULT_MAX_ZOOM = 20;
+const DEFAULT_MIN_ZOOM = 0.5;
+const DEFAULT_MAX_ZOOM = 2.5;
 const BUTTON_ZOOM_FACTOR = 1.2;
 const WHEEL_ZOOM_SENSITIVITY = 0.94;
 
