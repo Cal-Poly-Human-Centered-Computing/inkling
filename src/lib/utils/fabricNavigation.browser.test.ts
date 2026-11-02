@@ -78,6 +78,45 @@ test('zooming out never goes below 0.5x', () => {
   expect(canvas.getZoom()).toBe(0.5);
 });
 
+test('panning stays within the centered minimum-zoom boundary', () => {
+  setUp();
+
+  space('keydown');
+  pointer('pointerdown', new Point(100, 100));
+  pointer('pointermove', new Point(1100, 1100));
+  pointer('pointerup', new Point(1100, 1100));
+  space('keyup');
+  expect(canvas.viewportTransform?.[4]).toBe(200);
+  expect(canvas.viewportTransform?.[5]).toBe(150);
+
+  space('keydown');
+  pointer('pointerdown', new Point(100, 100));
+  pointer('pointermove', new Point(-900, -900));
+  pointer('pointerup', new Point(-900, -900));
+  space('keyup');
+  expect(canvas.viewportTransform?.[4]).toBe(-200);
+  expect(canvas.viewportTransform?.[5]).toBe(-150);
+});
+
+test('wheel panning stays within the centered minimum-zoom boundary', () => {
+  setUp();
+
+  const rect = canvas.upperCanvasEl.getBoundingClientRect();
+  canvas.upperCanvasEl.dispatchEvent(
+    new WheelEvent('wheel', {
+      clientX: rect.left + 200,
+      clientY: rect.top + 150,
+      deltaX: -1000,
+      deltaY: -1000,
+      bubbles: true,
+      cancelable: true
+    })
+  );
+
+  expect(canvas.viewportTransform?.[4]).toBe(200);
+  expect(canvas.viewportTransform?.[5]).toBe(150);
+});
+
 /** Dispatches a pointer event on the canvas at a point given in canvas-element coordinates. */
 function pointer(type: string, at: Point) {
   const rect = canvas.upperCanvasEl.getBoundingClientRect();

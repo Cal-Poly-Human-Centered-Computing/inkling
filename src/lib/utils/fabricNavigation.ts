@@ -22,6 +22,7 @@ export interface FabricNavigationController {
   setHandMode(enabled: boolean): void;
   zoomIn(): void;
   zoomOut(): void;
+  constrainViewport(): void;
   dispose(): void;
 }
 
@@ -67,6 +68,30 @@ function normalizeWheelDelta(event: WheelEvent, canvasElement: HTMLElement): Poi
     x: event.deltaX * multiplier,
     y: event.deltaY * multiplier
   };
+}
+
+function clampViewport(canvas: FabricCanvas, minZoom: number): void {
+  const viewportTransform = canvas.viewportTransform;
+  if (!viewportTransform) return;
+
+  // The boundary is the scene rectangle visible when the canvas is centered at minZoom.
+  // Keep that scene rectangle fixed; only the transform limits change with the current zoom.
+  const boundaryWidth = canvas.getWidth() / minZoom;
+  const boundaryHeight = canvas.getHeight() / minZoom;
+  const boundaryLeft = (canvas.getWidth() - boundaryWidth) / 2;
+  const boundaryTop = (canvas.getHeight() - boundaryHeight) / 2;
+  const zoomX = viewportTransform[0];
+  const zoomY = viewportTransform[3];
+
+  viewportTransform[4] = Math.min(
+    -zoomX * boundaryLeft,
+    Math.max(canvas.getWidth() - zoomX * (boundaryLeft + boundaryWidth), viewportTransform[4])
+  );
+  viewportTransform[5] = Math.min(
+    -zoomY * boundaryTop,
+    Math.max(canvas.getHeight() - zoomY * (boundaryTop + boundaryHeight), viewportTransform[5])
+  );
+  canvas.setViewportTransform(viewportTransform);
 }
 
 export function installFabricNavigation(
@@ -139,6 +164,7 @@ export function installFabricNavigation(
     };
     panStart = { x: event.clientX, y: event.clientY };
     canvas.relativePan(new Point(delta.x, delta.y));
+    clampViewport(canvas, minZoom);
     canvas.requestRenderAll();
   };
 
@@ -167,6 +193,7 @@ export function installFabricNavigation(
         Math.max(minZoom, canvas.getZoom() * Math.pow(WHEEL_ZOOM_SENSITIVITY, delta.y))
       );
       canvas.zoomToPoint(pointer, zoom);
+      clampViewport(canvas, minZoom);
       onZoomChange?.(zoom);
       canvas.requestRenderAll();
       return;
@@ -182,6 +209,7 @@ export function installFabricNavigation(
 
     event.preventDefault();
     canvas.relativePan(new Point(-panX, -panY));
+    clampViewport(canvas, minZoom);
     canvas.requestRenderAll();
   };
 
@@ -219,6 +247,7 @@ export function installFabricNavigation(
   const zoomBy = (factor: number) => {
     const zoom = Math.min(maxZoom, Math.max(minZoom, canvas.getZoom() * factor));
     canvas.zoomToPoint(canvas.getCenterPoint(), zoom);
+    clampViewport(canvas, minZoom);
     onZoomChange?.(zoom);
     canvas.requestRenderAll();
   };
@@ -245,6 +274,10 @@ export function installFabricNavigation(
     },
     zoomOut() {
       zoomBy(1 / BUTTON_ZOOM_FACTOR);
+    },
+    constrainViewport() {
+      clampViewport(canvas, minZoom);
+      canvas.requestRenderAll();
     },
     dispose() {
       cancelPan();
