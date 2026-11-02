@@ -7,6 +7,7 @@
   import { get } from 'svelte/store';
   import type * as Monaco from 'monaco-editor';
   import { getDataToken, type PersistedDataset } from '$lib/utils/datasetStore';
+  import { loadSavedSpecBody, saveSpecBody } from '$lib/utils/savedEditor';
   import constrainedEditor from 'constrained-editor-plugin';
   import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
   import JsonWorker from 'monaco-editor/language/json/json.worker?worker';
@@ -36,11 +37,13 @@
   let removedOverlayWidget: Monaco.editor.IContentWidget | null = null;
   let removedOverlayDomNode: HTMLDivElement | null = null;
 
-  // hold schema and data enforced into any incoming spec
-  const schema = 'https://vega.github.io/schema/vega-lite/v6.json';
+  // the dataset's `data`, enforced into any incoming spec
   let data: PersistedDataset | null = null;
 
   let specHistory: string[] = [];
+
+  /** Stops saving the spec to localStorage; set once the editor has restored the saved spec. */
+  let unsubscribeSave: (() => void) | null = null;
 
   function applyServerDiffDecorations(prevText: string, newText: string) {
     if (!editorModel || !monaco) return;
@@ -219,12 +222,28 @@
     dispatch('copied');
   }
 
-  function getReadonlyText() {
-    let str = JSON.stringify({ $schema: schema, data: data }, null, '  ');
+  /**
+   * The editor text for the current dataset: the read-only header, then `body` (the editable part; a blank,
+   * indented line by default), then the closing brace.
+   */
+  function getReadonlyText(body = '  ') {
+    let str = JSON.stringify({ data: data }, null, '  ');
 
-    str = str.slice(0, -2) + ',\n  \n}'; // remove closing brace and re-add with extra space for user edits
+    str = str.slice(0, -2) + ',\n' + body + '\n}'; // remove closing brace and re-add after the editable part
 
     return str;
+  }
+
+  /**
+   * The editable part of `text` (between the read-only header and the closing brace), or null if `text` doesn't
+   * start with the current header, e.g. a store reset that isn't editor content.
+   */
+  function editableBody(text: string): string | null {
+    const lines = text.split('\n');
+    const header = getReadonlyText().split('\n').slice(0, headerLineCount());
+    if (lines.length < header.length + 1 || header.some((line, i) => lines[i] !== line))
+      return null;
+    return lines.slice(header.length, -1).join('\n');
   }
 
   /** Number of read-only header lines at the top of the editor; depends on how many lines the dataset's `data` takes. */
@@ -312,7 +331,9 @@
       lineNumbersMinChars: 2,
       glyphMargin: true,
       lineDecorationsWidth: 4,
-      folding: false
+      // fold objects and arrays; the arrows show when hovering the gutter
+      folding: true,
+      showFoldingControls: 'mouseover'
     });
     // set explicitly at creation so there's no flash of the wrong theme; later changes are handled reactively below
     monaco.editor.setTheme(get(isDark) ? 'vs-dark' : 'vs');
@@ -361,10 +382,11 @@
     }
   }
 
-  async function initializeEditor() {
+  /** Recreates the editor with the current dataset's header and `body` as the editable part (blank by default). */
+  async function initializeEditor(body?: string) {
     disposeEditor();
 
-    const initialContents = getReadonlyText();
+    const initialContents = getReadonlyText(body);
 
     codeStore.set(initialContents);
     specHistory.push(initialContents);
@@ -372,13 +394,42 @@
     await createEditor();
   }
 
+  /**
+   * Gives the JSON editor the installed Vega-Lite's schema, for autocomplete and hover docs. Only syntax errors are
+   * flagged: a half-typed spec matches none of the schema's top-level shapes, so schema warnings would be noise.
+   * Not awaited by callers: the schema is ~2MB, and the editor picks it up whenever it arrives.
+   */
+  async function useVegaLiteSchema(m: typeof Monaco) {
+    const { default: vegaLiteSchema } = await import('vega-lite/vega-lite-schema.json');
+    m.json.jsonDefaults.setDiagnosticsOptions({
+      validate: true,
+      schemaValidation: 'ignore',
+      schemas: [
+        {
+          uri: 'https://vega.github.io/schema/vega-lite/v6.json',
+          fileMatch: ['*'],
+          schema: vegaLiteSchema
+        }
+      ]
+    });
+  }
+
   onMount(async () => {
     if (!editorContainer) return;
     monaco = await import('monaco-editor');
+    useVegaLiteSchema(monaco).catch((err) =>
+      console.warn('Failed to load the Vega-Lite schema for autocomplete', err)
+    );
 
     data = getDataToken();
 
-    await initializeEditor();
+    // restore the spec from before the editor was last unmounted (e.g. a visit to the dataset preview)
+    await initializeEditor(loadSavedSpecBody() ?? undefined);
+    // subscribed only now, so the store's initial value never overwrites the saved spec
+    unsubscribeSave = codeStore.subscribe((text) => {
+      const body = editableBody(text);
+      if (body !== null) saveSpecBody(body);
+    });
     document.addEventListener('pointerdown', handleRemovedOverlayOutsidePointerDown);
 
     editorMounted = true;
@@ -421,15 +472,16 @@
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         const rest: any = {};
         for (const k of Object.keys(parsed)) {
+          // the header supplies `data`; `$schema` is dropped, since the editor gets the schema programmatically
           if (k === '$schema' || k === 'data') continue;
           rest[k] = parsed[k];
         }
-        finalObj = { $schema: schema, data: data, ...rest };
+        finalObj = { data: data, ...rest };
       } else {
-        finalObj = { $schema: schema, data: data, spec: parsed };
+        finalObj = { data: data, spec: parsed };
       }
     } catch (err) {
-      finalObj = { $schema: schema, data: data, _user_raw: newCode };
+      finalObj = { data: data, _user_raw: newCode };
     }
 
     try {
@@ -511,6 +563,7 @@
   }
 
   onDestroy(() => {
+    unsubscribeSave?.();
     if (typeof document !== 'undefined') {
       document.removeEventListener('pointerdown', handleRemovedOverlayOutsidePointerDown);
     }

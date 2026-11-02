@@ -6,6 +6,7 @@ import {
   getColumnSchema,
   getDataToken,
   getRows,
+  getSummary,
   readPersistedDataset,
   setDataset
 } from './datasetStore';
@@ -106,6 +107,35 @@ describe('persistence', () => {
     localStorage.setItem('app:dataset:abc', JSON.stringify({ columns: ['a'] }));
     localStorage.setItem('app:dataset:abc:rows', '{not json');
     expect(getRows()).toBeNull();
+  });
+});
+
+describe('getSummary', () => {
+  const rows = [
+    { b: 1, a: 'x' },
+    { b: 2, a: 'y' }
+  ];
+
+  /** The id the store gave the dataset; read from its metadata key, since URL datasets don't expose it. */
+  function storedId(): string {
+    const key = Object.keys(localStorage).find((k) => /^app:dataset:[^:]+$/.test(k));
+    return key!.slice('app:dataset:'.length);
+  }
+
+  it('stores a summary of every column when a dataset is saved', () => {
+    setDataset(rows, ['a', 'b']);
+    const summary = getSummary(storedId());
+    expect(summary?.rowCount).toBe(2);
+    expect(summary?.columns.map((c) => c.name)).toEqual(['a', 'b']);
+  });
+
+  it('stores a summary for a URL dataset, whose rows are not kept', () => {
+    setDataset(rows, ['a', 'b'], { url: 'https://example.com/data.csv' });
+    expect(getSummary(storedId())?.rowCount).toBe(2);
+  });
+
+  it('has no summary for an unknown id', () => {
+    expect(getSummary('nope')).toBeNull();
   });
 });
 

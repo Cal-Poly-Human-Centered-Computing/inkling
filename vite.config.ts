@@ -23,6 +23,7 @@ export default defineConfig({
           name: 'browser',
           include: ['src/**/*.browser.test.ts'],
           testTimeout: 30_000,
+          fileParallelism: false,
           browser: {
             enabled: true,
             provider: playwright(),

@@ -2,15 +2,16 @@
   import Fa from 'svelte-fa';
   import { faDatabase } from '@fortawesome/free-solid-svg-icons';
   import { loadDatasetFromFile, loadDatasetFromUrl } from '$lib/utils/datasetLoader';
-  import { setDataset } from '$lib/utils/datasetStore';
-  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { datasetDisplayName, readCurrentDataset, setDataset } from '$lib/utils/datasetStore';
+  import { resolve } from '$app/paths';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
 
   const dispatch = createEventDispatcher();
 
-  // upload modal state
-  let showUploadModal = false;
-  let selectedFile: File | null = null;
-  let fileInputEl: HTMLInputElement | null = null;
+  /** The attached dataset, shown next to the attach button; re-read after each attach. */
+  let current: ReturnType<typeof readCurrentDataset> = null;
+  // read after mount: localStorage is only in the browser, and the server-rendered page has no dataset
+  onMount(() => (current = readCurrentDataset()));
 
   // dataset modal state
   let showDatasetModal: boolean = false;
@@ -26,33 +27,6 @@
   let helpButtonEl: HTMLButtonElement | null = null;
   let helpPopoverEl: HTMLDivElement | null = null;
 
-  function openUploadModal() {
-    selectedFile = null;
-    showUploadModal = true;
-    setTimeout(() => fileInputEl?.focus(), 0);
-  }
-
-  function onFileChange(e: Event) {
-    const input = e.target as HTMLInputElement;
-    if (input.files && input.files[0]) {
-      selectedFile = input.files[0];
-    } else {
-      selectedFile = null;
-    }
-  }
-
-  function confirmUpload() {
-    if (selectedFile) {
-      dispatch('upload', selectedFile);
-    }
-    showUploadModal = false;
-  }
-
-  function cancelUpload() {
-    selectedFile = null;
-    showUploadModal = false;
-  }
-
   // dataset modal handlers
   function openDatasetModal() {
     datasetMode = 'url';
@@ -63,17 +37,14 @@
     setTimeout(() => datasetFileInput?.focus(), 0);
   }
 
+  // editor state
+  export let applying: boolean = false;
+
   function onDatasetFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files[0]) datasetFile = input.files[0];
     else datasetFile = null;
   }
-
-  // // hide the help popover whenever the user switches away from file mode
-  // $: if (datasetMode !== 'file') {
-  // 	showDatasetHelp = false;
-  // 	document.removeEventListener('mousedown', handleDocClick);
-  // }
 
   /**
    * Loads the chosen file or URL, stores it, and tells the page with `datasetAttached`. On failure the modal stays
@@ -100,6 +71,7 @@
         datasetError = 'The dataset is too large to store in the browser.';
         return;
       }
+      current = readCurrentDataset();
       dispatch('datasetAttached');
       showDatasetModal = false;
     } catch (err) {
@@ -143,16 +115,29 @@
   });
 </script>
 
-<div>
-  <div class="field" style="flex:0 0 auto; display:flex; align-items:center; gap:0.5rem;">
-    <button
-      class="button is-light accent-button"
-      aria-label="Attach dataset"
-      on:click={openDatasetModal}
-    >
-      <span class="icon is-small"><Fa icon={faDatabase} /></span>
-    </button>
-  </div>
+<div class="dataset-controls">
+  {#if current}
+    {#if applying}
+      <span class="dataset-link has-text-grey">Peek at {datasetDisplayName(current.meta)}</span>
+    {:else}
+      <a
+        class="dataset-link"
+        href={resolve('/dataset/[id]', { id: current.id })}
+        title="Preview {current.meta.url ?? datasetDisplayName(current.meta)}"
+        >Peek at {datasetDisplayName(current.meta)}</a
+      >
+    {/if}
+    or
+  {/if}
+  <button
+    class="button is-light accent-button"
+    aria-label="Attach dataset"
+    title={current ? 'Attach a different dataset' : 'Attach a dataset'}
+    on:click={openDatasetModal}
+    disabled={applying}
+  >
+    <Fa icon={faDatabase} />&nbsp;{current ? 'Attach a different dataset' : 'Attach a dataset'}
+  </button>
 </div>
 
 <!-- Dataset modal -->
@@ -174,6 +159,12 @@
         <button class="delete" aria-label="close" on:click={cancelDataset}></button>
       </header>
       <section class="modal-card-body">
+        {#if current}
+          <p class="mb-4">
+            Current dataset: <strong>{datasetDisplayName(current.meta)}</strong>. Attaching a new
+            dataset replaces it.
+          </p>
+        {/if}
         <div class="field">
           <label class="label" for="dataset-mode-select">Source</label>
           <div
@@ -207,7 +198,8 @@
                 aria-live="polite"
               >
                 <p style="margin:0; font-size:0.9rem;">
-                 Data never leaves the browser's local storage. Only column names and data types are sent to an AI model to aid in generating a visualization specification. 
+                  Data never leaves the browser's local storage. Only column names and data types
+                  are sent to an AI model to aid in generating a visualization specification.
                 </p>
               </div>
             {/if}
@@ -266,6 +258,22 @@
 {/if}
 
 <style>
+  .dataset-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  /* underlined so it reads as a link; long names are cut short, with the full name or URL in the title */
+  .dataset-link {
+    display: inline-block;
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-decoration: underline;
+  }
+
   .help-icon-button {
     border-radius: 50%;
     width: 1.6rem;

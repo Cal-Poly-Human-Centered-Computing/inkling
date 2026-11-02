@@ -13,6 +13,7 @@
   } from '$lib/utils/fabricNavigation';
   import { flipInk } from '$lib/utils/ink';
   import { getDataToken, getRows } from '$lib/utils/datasetStore';
+  import { loadSavedCanvas, saveCanvas } from '$lib/utils/savedEditor';
 
   // Fabric.js canvas references
   let fabricCanvas: any = null;
@@ -197,6 +198,8 @@
       // embed the spec as SVG
       // vega-embed merges this config under the spec's own `config`, so specs can still override it
       await vegaEmbed(off, specObj, {
+        // the editor's spec has no $schema to tell vega-embed which language it is
+        mode: 'vega-lite',
         renderer: 'svg',
         actions: false,
         config: plotTheme($isDark)
@@ -326,19 +329,24 @@
     doRenderSpec().catch(() => {});
   }
 
-  function snapshot() {
+  /** The canvas marks as JSON, without the rendered chart, tagged with the current theme. */
+  function serializeCanvas(): string {
     const background = fabricCanvas.backgroundImage;
-
     fabricCanvas.backgroundImage = null;
-
     // record the theme the strokes were drawn under so restore() knows whether to recolor ink
     const snap = JSON.stringify({ ...fabricCanvas.toJSON(), dark: $isDark });
+    fabricCanvas.backgroundImage = background;
+    return snap;
+  }
+
+  /** Adds the current marks to the undo history, and saves them so they survive leaving the page. */
+  function snapshot() {
+    const snap = serializeCanvas();
     // trim future redo history
     currentHistoryStack = currentHistoryStack.slice(0, historyIndex + 1);
     currentHistoryStack.push(snap);
     historyIndex = currentHistoryStack.length - 1;
-
-    fabricCanvas.backgroundImage = background;
+    saveCanvas(snap);
   }
 
   export function undo() {
@@ -353,26 +361,32 @@
     restore(currentHistoryStack[historyIndex]);
   }
 
-  function restore(snap: string) {
+  /** Replaces the marks with a snapshot's (undo, redo, rollback, or the saved canvas on mount) and saves them. */
+  function restore(snap: string): Promise<void> {
     try {
       fabricCanvas.clear();
       // restore canvas state
-      fabricCanvas.loadFromJSON(snap).then(() => {
-        if (backgroundImg) {
-          // since this is only used for undo/redo which only affect canvas markup,
-          // keep the rendered visualization the same
-          backgroundImg.canvas = fabricCanvas;
-          fabricCanvas.backgroundImage = backgroundImg;
-        }
-        // in case the user has switched between light and dark mode, keep the theme consistent
-        fabricCanvas.backgroundColor = $isDark ? DARK_BG : LIGHT_BG;
-        // ...and make sure ink drawn under the other theme stays visible
-        if (JSON.parse(snap).dark !== $isDark) recolorInk();
+      return fabricCanvas
+        .loadFromJSON(snap)
+        .then(() => {
+          if (backgroundImg) {
+            // since this is only used for undo/redo which only affect canvas markup,
+            // keep the rendered visualization the same
+            backgroundImg.canvas = fabricCanvas;
+            fabricCanvas.backgroundImage = backgroundImg;
+          }
+          // in case the user has switched between light and dark mode, keep the theme consistent
+          fabricCanvas.backgroundColor = $isDark ? DARK_BG : LIGHT_BG;
+          // ...and make sure ink drawn under the other theme stays visible
+          if (JSON.parse(snap).dark !== $isDark) recolorInk();
 
-        fabricCanvas.requestRenderAll();
-      });
+          fabricCanvas.requestRenderAll();
+          saveCanvas(snap);
+        })
+        .catch((err: unknown) => console.warn('failed to restore snapshot', err));
     } catch (err) {
       console.warn('failed to restore snapshot', err);
+      return Promise.resolve();
     }
   }
 
@@ -551,6 +565,11 @@
       console.warn('failed to initialize PencilBrush', err);
     }
 
+    // bring back the marks from before the page was last left (e.g. for the dataset preview), before the first
+    // snapshot, so undo starts from them
+    const saved = loadSavedCanvas();
+    if (saved) await restore(saved);
+
     // Ensure the canvas cursor/tool mode matches the selected tool on mount
     updateToolMode();
     snapshot();
@@ -558,6 +577,9 @@
     // snapshot whenever something is added or changed
     fabricCanvas.on('object:modified', snapshot);
     fabricCanvas.on('path:created', snapshot);
+    // typed text is only snapshotted when editing ends; save it as it's typed, so leaving the page or reloading
+    // mid-edit keeps it (without adding an undo step per keystroke)
+    fabricCanvas.on('text:changed', () => saveCanvas(serializeCanvas()));
 
     // wire up mouse handler
     fabricCanvas.on('mouse:down', handleCanvasMouseDown);
@@ -593,6 +615,7 @@
         fabricCanvas.off?.('path:created');
         fabricCanvas.off?.('mouse:down');
         fabricCanvas.off?.('object:modified');
+        fabricCanvas.off?.('text:changed');
         fabricCanvas.off?.('object:removed');
         // dispose/remove canvas to avoid memory leaks (method name varies by Fabric version)
         if (typeof fabricCanvas.dispose === 'function') {
