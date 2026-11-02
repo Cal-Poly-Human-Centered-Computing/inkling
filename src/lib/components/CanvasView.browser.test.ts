@@ -53,6 +53,12 @@ test('with the textbox tool, a click while holding space adds no textbox', async
   expect(screen.component.hasCanvasObjects()).toBe(true);
 });
 
+test('displays magnification starting at 1x', async () => {
+  const screen = await mountCanvasView();
+
+  await expect.element(screen.getByLabelText('Zoom 1x')).toBeVisible();
+});
+
 test('a valid spec renders a chart', async () => {
   const screen = await mountCanvasView();
 

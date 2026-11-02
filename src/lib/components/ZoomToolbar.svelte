@@ -5,23 +5,25 @@
   import { faPlus } from '@fortawesome/free-solid-svg-icons/faPlus';
 
   const dispatch = createEventDispatcher();
-  export let zoomPercent: number = 100;
+  export let zoom: number = 1;
 
-  function zoom(direction: 'in' | 'out') {
+  $: displayedZoom = `${Math.round(zoom * 100) / 100}x`;
+
+  function dispatchZoom(direction: 'in' | 'out') {
     dispatch('zoom', direction);
   }
 </script>
 
 <div class="zoom-toolbar" role="toolbar" aria-label="Zoom controls">
-  <button class="button zoom-button" on:click={() => zoom('out')} aria-label="Zoom out">
+  <button class="button zoom-button" on:click={() => dispatchZoom('out')} aria-label="Zoom out">
     <span class="icon zoom-icon">
       <Fa icon={faMinus} />
     </span>
   </button>
-  <span class="zoom-level" aria-label={`Zoom ${Math.round(zoomPercent)} percent`}>
-    {Math.round(zoomPercent)}%
+  <span class="zoom-level" aria-label={`Zoom ${displayedZoom}`}>
+    {displayedZoom}
   </span>
-  <button class="button zoom-button" on:click={() => zoom('in')} aria-label="Zoom in">
+  <button class="button zoom-button" on:click={() => dispatchZoom('in')} aria-label="Zoom in">
     <span class="icon zoom-icon">
       <Fa icon={faPlus} />
     </span>

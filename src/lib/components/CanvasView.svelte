@@ -32,7 +32,7 @@
   let selectedTool: 'pen' | 'textbox' | 'selector' | 'hand' = 'pen';
   /** True while space is held to pan; the hand tool is shown and used without changing `selectedTool`. */
   let spaceHand = false;
-  let zoomPercent = 100;
+  let zoom = 1;
 
   // canvas background per theme; dark matches the vega-themes 'dark' background so there's no seam around the chart
   const LIGHT_BG = '#ffffff';
@@ -218,6 +218,7 @@
       const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
 
       FabricImage.fromURL(svgDataUrl).then((img: any) => {
+        if (!fabricCanvas) return;
         const canvasW = fabricCanvas.getWidth();
         const toolbarHeight = toolbarEl ? toolbarEl.getBoundingClientRect().height : 0;
         const canvasH = fabricCanvas.getHeight() - toolbarHeight;
@@ -517,8 +518,8 @@
       preserveObjectStacking: true
     });
     fabricNavigation = installFabricNavigation(fabricCanvas, {
-      onZoomChange: (zoom) => {
-        zoomPercent = zoom * 100;
+      onZoomChange: (currentZoom) => {
+        zoom = currentZoom;
       },
       onSpaceHandChange: (active) => {
         spaceHand = active;
@@ -627,7 +628,7 @@
   function resetViewport() {
     if (!fabricCanvas) return;
     fabricCanvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-    zoomPercent = 100;
+    zoom = 1;
     fabricCanvas.requestRenderAll();
   }
 
@@ -803,7 +804,7 @@
   </div>
 
   <div class="zoom-toolbar-container">
-    <ZoomToolbar {zoomPercent} on:zoom={handleZoom} />
+    <ZoomToolbar {zoom} on:zoom={handleZoom} />
   </div>
 
   <!-- Fabric.js canvas with the rendered vis as the background -->
