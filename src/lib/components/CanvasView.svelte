@@ -198,6 +198,8 @@
       // embed the spec as SVG
       // vega-embed merges this config under the spec's own `config`, so specs can still override it
       await vegaEmbed(off, specObj, {
+        // the editor's spec has no $schema to tell vega-embed which language it is
+        mode: 'vega-lite',
         renderer: 'svg',
         actions: false,
         config: plotTheme($isDark)

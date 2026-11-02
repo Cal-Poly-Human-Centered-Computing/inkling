@@ -37,8 +37,7 @@
   let removedOverlayWidget: Monaco.editor.IContentWidget | null = null;
   let removedOverlayDomNode: HTMLDivElement | null = null;
 
-  // hold schema and data enforced into any incoming spec
-  const schema = 'https://vega.github.io/schema/vega-lite/v6.json';
+  // the dataset's `data`, enforced into any incoming spec
   let data: PersistedDataset | null = null;
 
   let specHistory: string[] = [];
@@ -228,7 +227,7 @@
    * indented line by default), then the closing brace.
    */
   function getReadonlyText(body = '  ') {
-    let str = JSON.stringify({ $schema: schema, data: data }, null, '  ');
+    let str = JSON.stringify({ data: data }, null, '  ');
 
     str = str.slice(0, -2) + ',\n' + body + '\n}'; // remove closing brace and re-add after the editable part
 
@@ -332,7 +331,9 @@
       lineNumbersMinChars: 2,
       glyphMargin: true,
       lineDecorationsWidth: 4,
-      folding: false
+      // fold objects and arrays; the arrows show when hovering the gutter
+      folding: true,
+      showFoldingControls: 'mouseover'
     });
     // set explicitly at creation so there's no flash of the wrong theme; later changes are handled reactively below
     monaco.editor.setTheme(get(isDark) ? 'vs-dark' : 'vs');
@@ -393,9 +394,32 @@
     await createEditor();
   }
 
+  /**
+   * Gives the JSON editor the installed Vega-Lite's schema, for autocomplete and hover docs. Only syntax errors are
+   * flagged: a half-typed spec matches none of the schema's top-level shapes, so schema warnings would be noise.
+   * Not awaited by callers: the schema is ~2MB, and the editor picks it up whenever it arrives.
+   */
+  async function useVegaLiteSchema(m: typeof Monaco) {
+    const { default: vegaLiteSchema } = await import('vega-lite/vega-lite-schema.json');
+    m.json.jsonDefaults.setDiagnosticsOptions({
+      validate: true,
+      schemaValidation: 'ignore',
+      schemas: [
+        {
+          uri: 'https://vega.github.io/schema/vega-lite/v6.json',
+          fileMatch: ['*'],
+          schema: vegaLiteSchema
+        }
+      ]
+    });
+  }
+
   onMount(async () => {
     if (!editorContainer) return;
     monaco = await import('monaco-editor');
+    useVegaLiteSchema(monaco).catch((err) =>
+      console.warn('Failed to load the Vega-Lite schema for autocomplete', err)
+    );
 
     data = getDataToken();
 
@@ -448,15 +472,16 @@
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         const rest: any = {};
         for (const k of Object.keys(parsed)) {
+          // the header supplies `data`; `$schema` is dropped, since the editor gets the schema programmatically
           if (k === '$schema' || k === 'data') continue;
           rest[k] = parsed[k];
         }
-        finalObj = { $schema: schema, data: data, ...rest };
+        finalObj = { data: data, ...rest };
       } else {
-        finalObj = { $schema: schema, data: data, spec: parsed };
+        finalObj = { data: data, spec: parsed };
       }
     } catch (err) {
-      finalObj = { $schema: schema, data: data, _user_raw: newCode };
+      finalObj = { data: data, _user_raw: newCode };
     }
 
     try {
