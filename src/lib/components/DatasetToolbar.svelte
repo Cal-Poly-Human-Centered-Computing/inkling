@@ -37,6 +37,9 @@
     setTimeout(() => datasetFileInput?.focus(), 0);
   }
 
+  // editor state
+  export let applying: boolean = false;
+
   function onDatasetFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files[0]) datasetFile = input.files[0];
@@ -114,19 +117,24 @@
 
 <div class="dataset-controls">
   {#if current}
-    <a
-      class="dataset-link"
-      href={resolve('/dataset/[id]', { id: current.id })}
-      title="Preview {current.meta.url ?? datasetDisplayName(current.meta)}"
-      >Peek at {datasetDisplayName(current.meta)}</a
-    >
-  or
-  {/if}  
+    {#if applying}
+      <span class="dataset-link has-text-grey">Peek at {datasetDisplayName(current.meta)}</span>
+    {:else}
+      <a
+        class="dataset-link"
+        href={resolve('/dataset/[id]', { id: current.id })}
+        title="Preview {current.meta.url ?? datasetDisplayName(current.meta)}"
+        >Peek at {datasetDisplayName(current.meta)}</a
+      >
+    {/if}
+    or
+  {/if}
   <button
     class="button is-light accent-button"
     aria-label="Attach dataset"
     title={current ? 'Attach a different dataset' : 'Attach a dataset'}
     on:click={openDatasetModal}
+    disabled={applying}
   >
     <Fa icon={faDatabase} />&nbsp;{current ? 'Attach a different dataset' : 'Attach a dataset'}
   </button>

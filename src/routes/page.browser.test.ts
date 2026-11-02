@@ -199,8 +199,12 @@ test('when a dataset is attached, a link to should point to its preview', async 
   setDataset([{ a: 1, b: 2 }], ['a', 'b'], { url: 'https://example.com/other.csv' });
   const screen = await mountPage();
 
-  await expect.poll(() => screen.container.querySelector('.dataset-link'), { timeout: 2500 }).toHaveTextContent("Peek at other.csv")
-  await expect.poll(() => screen.getByText('Attach a different dataset'), { timeout: 2500 }).toBeDefined();
+  await expect
+    .poll(() => screen.container.querySelector('.dataset-link'), { timeout: 2500 })
+    .toHaveTextContent('Peek at other.csv');
+  await expect
+    .poll(() => screen.getByText('Attach a different dataset'), { timeout: 2500 })
+    .toBeDefined();
 });
 
 test("when no dataset is attached, there shouldn't be a preview link", async () => {
@@ -210,4 +214,46 @@ test("when no dataset is attached, there shouldn't be a preview link", async () 
 
   expect(datasetLink).toBeNull();
   await expect.poll(() => screen.getByText('Attach a dataset'), { timeout: 2500 }).toBeDefined();
-})
+});
+
+test('canvas marks survive leaving the editor and coming back', async () => {
+  const first = await mountPage();
+  await addTextbox(first);
+  first.unmount();
+
+  const screen = await mountPage();
+
+  // marks on the canvas mark it active and enable Apply, with nothing typed in the chat
+  await expect
+    .poll(() =>
+      screen.container.querySelector('canvas.lower-canvas')?.classList.contains('is-active')
+    )
+    .toBe(true);
+  await expect.element(screen.getByRole('button', { name: 'Apply changes' })).toBeEnabled();
+});
+
+test('applied canvas marks are not restored after leaving the editor', async () => {
+  restoreFetch = mockApplyChanges({
+    ok: true,
+    result: JSON.stringify({ mark: 'bar' }),
+    errors: []
+  });
+  const first = await mountPage();
+  await addTextbox(first);
+  await first.getByRole('button', { name: 'Apply changes' }).click();
+  await expect.poll(() => get(code), { timeout: 2500 }).toContain('"bar"');
+  // the canvas is cleared just after the spec updates
+  await expect
+    .poll(() =>
+      first.container.querySelector('canvas.lower-canvas')?.classList.contains('is-active')
+    )
+    .toBe(false);
+  first.unmount();
+
+  const screen = await mountPage();
+
+  await expect.element(screen.getByRole('button', { name: 'Apply changes' })).toBeDisabled();
+  expect(
+    screen.container.querySelector('canvas.lower-canvas')?.classList.contains('is-active')
+  ).toBe(false);
+});

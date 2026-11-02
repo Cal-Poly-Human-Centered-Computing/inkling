@@ -7,7 +7,7 @@
   import { get } from 'svelte/store';
   import type * as Monaco from 'monaco-editor';
   import { getDataToken, type PersistedDataset } from '$lib/utils/datasetStore';
-  import { loadSavedSpecBody, saveSpecBody } from '$lib/utils/savedSpec';
+  import { loadSavedSpecBody, saveSpecBody } from '$lib/utils/savedEditor';
   import constrainedEditor from 'constrained-editor-plugin';
   import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
   import JsonWorker from 'monaco-editor/language/json/json.worker?worker';

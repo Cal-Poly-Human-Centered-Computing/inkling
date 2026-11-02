@@ -227,7 +227,7 @@
   <div class="columns" style="height:100%;">
     <div class="column is-half" style="display:flex; flex-direction:column; padding-right:0.5rem;">
       <div style="flex: 0 0 auto; height: 3rem;">
-        <DatasetToolbar on:datasetAttached={handleDatasetAttached}></DatasetToolbar>
+        <DatasetToolbar {applying} on:datasetAttached={handleDatasetAttached}></DatasetToolbar>
       </div>
 
       <!-- Code editor area -->

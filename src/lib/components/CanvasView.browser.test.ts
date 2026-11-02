@@ -22,10 +22,12 @@ const barChart = JSON.stringify({
   }
 });
 
-// `code` is a global store and mounted boxes stay in the document, so reset both
+// `code` is a global store, mounted boxes stay in the document and the canvas saves its marks to localStorage (and
+// restores them on mount), so reset all three
 afterEach(() => {
   code.set('');
   document.body.replaceChildren();
+  localStorage.clear();
 });
 
 /** Mounts CanvasView in an 800×600 box; the canvas sizes itself from its container. */
