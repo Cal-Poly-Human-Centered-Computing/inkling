@@ -130,7 +130,7 @@
     or
   {/if}
   <button
-    class="button is-light accent-button"
+    class="button accent-button"
     aria-label="Attach dataset"
     title={current ? 'Attach a different dataset' : 'Attach a dataset'}
     on:click={openDatasetModal}

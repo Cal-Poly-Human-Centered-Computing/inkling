@@ -9,6 +9,8 @@
   export let canApply: boolean = false;
   export let canRollback: boolean = false;
   export let applying: boolean = false;
+  /** When false, the Apply button's tooltip asks the user to attach a dataset. */
+  export let hasDataset: boolean = true;
 
   function applyChanges() {
     if (applying) return; // guard
@@ -36,6 +38,7 @@
     <button
       class="button apply-changes-button toolbar-button"
       aria-label="Apply changes"
+      title={hasDataset ? undefined : 'Attach a dataset to apply changes'}
       on:click={applyChanges}
       disabled={!canApply || applying}
     >

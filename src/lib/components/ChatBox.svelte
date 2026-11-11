@@ -4,9 +4,11 @@
   const dispatch = createEventDispatcher();
   export let sending: boolean = false;
   export let message = '';
+  /** When false, Enter does nothing and the typed message is kept (e.g. no dataset attached yet). */
+  export let canSend: boolean = true;
 
   function send() {
-    if (sending) return;
+    if (sending || !canSend) return;
     if (message.trim() === '') return;
     dispatch('send', message.trim());
     message = '';

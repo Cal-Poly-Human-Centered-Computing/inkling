@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, beforeEach, expect, test } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { get } from 'svelte/store';
@@ -42,6 +42,11 @@ async function addTextbox(screen: Awaited<ReturnType<typeof mountPage>>) {
     .elementLocator(screen.container.querySelector('.upper-canvas')!)
     .click({ position: { x: 200, y: 300 } });
 }
+
+// Apply needs an attached dataset, so most tests start with one
+beforeEach(() => {
+  setDataset([{ a: 1, b: 2 }], ['a', 'b'], { url: 'https://example.com/points.csv' });
+});
 
 // `code` is a global store, `fetch` may be mocked and an attached dataset persists in localStorage, so reset all three
 afterEach(() => {
@@ -208,12 +213,31 @@ test('when a dataset is attached, a link to should point to its preview', async 
 });
 
 test("when no dataset is attached, there shouldn't be a preview link", async () => {
+  localStorage.clear();
   const screen = await mountPage();
 
   const datasetLink = screen.container.querySelector('.dataset-link');
 
   expect(datasetLink).toBeNull();
   await expect.poll(() => screen.getByText('Attach a dataset'), { timeout: 2500 }).toBeDefined();
+});
+
+test('Apply stays disabled until a dataset is attached', async () => {
+  localStorage.clear();
+  const screen = await mountPage();
+  const apply = screen.getByRole('button', { name: 'Apply changes' });
+
+  await screen.getByLabelText('Text input').fill('make it a bar chart');
+  await expect.element(apply).toBeDisabled();
+
+  await screen.getByRole('button', { name: 'Attach dataset' }).click();
+  await screen.getByLabelText('Choose dataset source').selectOptions('file');
+  await screen
+    .getByLabelText('JSON/CSV file')
+    .upload(new File(['a,b\n1,2'], 'points.csv', { type: 'text/csv' }));
+  await screen.getByRole('button', { name: 'Attach', exact: true }).click();
+
+  await expect.element(apply).toBeEnabled();
 });
 
 test('canvas marks survive leaving the editor and coming back', async () => {

@@ -3,8 +3,14 @@
   import { code as codeStore } from '$lib/stores/code';
   import { get } from 'svelte/store';
   import { observations as observationsStore } from '$lib/stores/observations';
-  import { getColumnSchema } from '$lib/utils/datasetStore';
+  import { getColumnSchema, readCurrentDataset } from '$lib/utils/datasetStore';
   import DatasetToolbar from '$lib/components/DatasetToolbar.svelte';
+  import { onMount } from 'svelte';
+
+  /** Apply needs a dataset, since the model is given its column names. */
+  let hasDataset = false;
+  // localStorage is only in the browser, so read after mount
+  onMount(() => (hasDataset = readCurrentDataset() !== null));
 
   let uploadedFile: File | null = null;
   let canvasViewRef: any = null;
@@ -67,7 +73,7 @@
   // Sends every active input (sketch or annotations, chat, current code) in one request.
   // Triggered by the Apply Changes button and by pressing Enter in the chat box.
   async function handleApplyChanges() {
-    if (applying) return;
+    if (applying || !hasDataset) return;
     applying = true;
 
     // Read the chat text before any await: the chat box clears itself right after dispatching Enter
@@ -202,6 +208,7 @@
   }
 
   function handleDatasetAttached() {
+    hasDataset = true;
     codeEditorRef.handleDatasetAttached();
   }
 
@@ -237,7 +244,12 @@
 
       <!-- Chatbox pinned to bottom -->
       <div style="flex:0 0 auto; margin-top:0.5rem;">
-        <ChatBox bind:message sending={applying} on:send={handleApplyChanges} />
+        <ChatBox
+          bind:message
+          sending={applying}
+          canSend={hasDataset}
+          on:send={handleApplyChanges}
+        />
       </div>
     </div>
 
@@ -247,9 +259,10 @@
         <VersionControlToolbar
           on:applyChanges={handleApplyChanges}
           on:rollbackChanges={handleRollbackChanges}
-          canApply={textInputIsActive() || canvasIsActive()}
+          canApply={hasDataset && (textInputIsActive() || canvasIsActive())}
           canRollback={historyStacks.length >= 1}
           {applying}
+          {hasDataset}
         />
       </div>
 
