@@ -1,4 +1,3 @@
-import { CLAUDE_API_KEY, ANTHROPIC_WORKSPACE_ID, CLAUDE_MODEL } from '$env/static/private';
 import { env } from '$env/dynamic/private';
 import { dev } from '$app/environment';
 import path from 'node:path';
@@ -7,6 +6,7 @@ import { createPipelines, type Pipelines } from './pipeline';
 import { recordRequest, type RequestKind } from './record';
 
 // The only module that reads SvelteKit env vars: it binds the pipelines to the app's LLM client.
+const { CLAUDE_API_KEY, ANTHROPIC_WORKSPACE_ID, CLAUDE_MODEL } = env;
 
 if (!CLAUDE_API_KEY) {
   throw new Error('Claude API key not configured. Set CLAUDE_API_KEY in your private environment.');
